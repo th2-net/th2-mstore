@@ -1,3 +1,8 @@
+FROM gradle:6.6-jdk11 AS build
+ARG app_version=0.0.0
+COPY ./ .
+RUN gradle dockerPrepare -Prelease_version=${app_version}
+
 FROM openjdk:12-alpine
 ENV CRADLE_INSTANCE_NAME=instance1 \
     CASSANDRA_DATA_CENTER=kos \
@@ -14,5 +19,5 @@ ENV CRADLE_INSTANCE_NAME=instance1 \
     RABBITMQ_EXCHANGE_NAME_TH2_CONNECTIVITY="" \
     TH2_CONNECTIVITY_ADDRESSES=""
 WORKDIR /home
-COPY ./ .
-ENTRYPOINT ["/home/message-store/bin/message-store", "/home/EventStore/etc/config.yml"]
+COPY --from=build /home/gradle/build/docker .
+ENTRYPOINT ["/home/service/bin/service", "/home/service/etc/config.yml"]

@@ -34,7 +34,7 @@ import com.exactpro.th2.store.common.utils.ProtoUtil;
 import com.google.protobuf.MessageLite;
 import com.rabbitmq.client.DeliverCallback;
 import com.rabbitmq.client.Delivery;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

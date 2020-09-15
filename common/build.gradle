@@ -1,8 +1,0 @@
-dependencies {
-    compile project(':grpc-event-store')
-
-    compile "com.exactpro.cradle:cradle-cassandra:${cradleVersion}"
-    compile "com.exactpro.cradle:cradle-core:${cradleVersion}"
-    compile "com.exactpro.th2:th2-common:${th2CommonVersion}"
-    implementation "io.vertx:vertx-rx-java2:$vertxVersion"
-}

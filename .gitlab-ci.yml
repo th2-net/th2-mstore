@@ -1,5 +1,5 @@
 variables:
-  APP_NAME: "th2-event-store"
+  APP_NAME: "th2-message-store"
   MAJOR_VERSION: "1"
   MINOR_VERSION: "3"
   MAINTENANCE_VERSION: '0'

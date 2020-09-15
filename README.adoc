@@ -1,28 +1,3 @@
-= Eventstore
-
-image:https://img.shields.io/badge/vert.x-3.8.5-purple.svg[link="https://vertx.io"]
-
-This application was generated using http://start.vertx.io
-
-== Building
-
-To launch your tests:
-```
-./gradlew clean test
-```
-
-To package your application:
-```
-./gradlew clean assemble
-```
-
-To run your application:
-```
-./gradlew clean run
-```
-
-Configs stored in EventStore.cfg file.
-
 Message store env variables:
 ```
 RABBITMQ_PASS=some_pass
@@ -32,18 +7,6 @@ RABBITMQ_VHOST=someVhost
 RABBITMQ_USER=some_user
 GRPC_PORT=7878
 TH2_CONNECTIVITY_ADDRESSES={"connectivity_name1": {"host": "127.0.0.1", "port": 5555}, "connectivity_name2": {"host": "some-host-name", "port": 5454}}
-CASSANDRA_DATA_CENTER=some_value
-CASSANDRA_HOST=some-cassandra-host
-CASSANDRA_PORT=9999
-CASSANDRA_KEYSPACE=some_keyspace
-CASSANDRA_USERNAME=some_user
-CASSANDRA_INSTANCE=some_instance
-CASSANDRA_PASSWORD=some_pass
-```
-
-Event store env variables:
-```
-GRPC_PORT=7878
 CASSANDRA_DATA_CENTER=some_value
 CASSANDRA_HOST=some-cassandra-host
 CASSANDRA_PORT=9999

@@ -13,7 +13,7 @@ ext {
     vertxGrpcVersion            = '1.25.0'
     junitJupiterEngineVersion   = '5.4.0'
 
-    cradleVersion               = '1.4-SNAPSHOT'
+    cradleVersion               = '1.5-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'

@@ -1,9 +1,0 @@
-#port: 8080
-#cradleInstanceName:
-#cassandraConfig
-#    dataCenter:
-#    host:
-#    port:
-#    keyspace:
-#    username:
-#    password:

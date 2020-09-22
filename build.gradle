@@ -19,14 +19,14 @@ sourceCompatibility = 11
 targetCompatibility = 11
 
 
-    repositories {
-        maven {
-            name 'MavenLocal'
-            url sharedDir
-        }
-        mavenCentral()
-        maven {
-            name 'Schema snapshot'
+repositories {
+    maven {
+        name 'MavenLocal'
+        url sharedDir
+    }
+    mavenCentral()
+    maven {
+        name 'Schema snapshot'
             url 'http://artifactory5.exp.exactpro.com/artifactory/th2-schema-snapshot-local'
         }
         maven {
@@ -59,7 +59,7 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:th2-bom:1.0.2')
+    api platform('com.exactpro.th2:th2-bom:1.0.0-schema-ci.+')
     implementation 'com.exactpro.th2:th2-common'
     implementation 'com.exactpro.th2:th2-store-common'
     implementation 'com.exactpro.cradle:cradle-cassandra'

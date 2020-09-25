@@ -31,7 +31,7 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch> {
 
     @Override
     protected String[] getAttributes() {
-        return new String[]{"in", "parsed"};
+        return new String[]{"subscribe", "parsed"};
     }
 
     @Override

@@ -30,7 +30,7 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch> 
 
     @Override
     protected String[] getAttributes() {
-        return new String[]{"in", "raw"};
+        return new String[]{"subscribe", "raw"};
     }
 
     @Override

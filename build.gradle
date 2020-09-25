@@ -1,69 +1,106 @@
 plugins {
-    id 'com.google.protobuf' version '0.8.8' apply false
-    id "com.jfrog.artifactory" version '4.15.1'
+    id 'java'
+    id 'java-library'
+    id 'application'
+    id 'com.palantir.docker' version '0.25.0'
 }
 
-allprojects {
-    apply plugin: 'com.jfrog.artifactory'
-
-    artifactoryPublish.skip = true
-
-    artifactory {
-        publish {
-            defaults {
-                // Reference to Gradle publications defined in the build script.
-                // This is how we tell the Artifactory Plugin which artifacts should be
-                // published to Artifactory.
-                publications('mavenJava')
-                publishArtifacts = true
-                publishBuildInfo = true
-                // Properties to be attached to the published artifacts.
-                publishPom = true
-            }
-        }
-    }
+ext {
+    sharedDir                   = file("${project.rootDir}/shared")
+    vertxVersion                = '3.8.5'
+    vertxGrpcVersion            = '1.25.0'
+    junitJupiterEngineVersion   = '5.4.0'
 }
 
-subprojects {
-    apply plugin: 'java'
-    apply plugin: 'java-library'
+group = 'com.exactpro.th2'
+version = release_version
 
-    ext {
-        sharedDir                   = file("${project.rootDir}/shared")
-        vertxVersion                = '3.8.5'
-        vertxGrpcVersion            = '1.25.0'
-        junitJupiterEngineVersion   = '5.4.0'
+sourceCompatibility = 11
+targetCompatibility = 11
 
-        cradleVersion               = '1.4-SNAPSHOT'
-        th2CommonVersion            = '1.1-SNAPSHOT'
-        th2ConnectivityVersion      = '1.1-SNAPSHOT'
+
+repositories {
+    maven {
+        name 'MavenLocal'
+        url sharedDir
     }
-
-    group = 'com.exactpro.th2'
-    version = "${version_major}.${version_minor}-SNAPSHOT"
-
-    sourceCompatibility = 1.11
-    targetCompatibility = 1.11
-
-
-    repositories {
-        maven {
-            name 'MavenLocal'
-            url sharedDir
-        }
-        mavenCentral()
-        maven {
-            name 'Schema snapshot'
+    mavenCentral()
+    maven {
+        name 'Schema snapshot'
             url 'http://artifactory5.exp.exactpro.com/artifactory/th2-schema-snapshot-local'
         }
         maven {
-            name 'Artifactory'
+            name 'Artifactory snapshot'
             url 'http://artifactory5.exp.exactpro.com/artifactory/libs-snapshot'
         }
-
-        configurations.all {
-            resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-            resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
+        maven {
+            name 'Artifactory release'
+            url 'http://artifactory5.exp.exactpro.com/artifactory/libs-release'
         }
+
+    configurations.all {
+        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+        resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
     }
+}
+
+jar {
+    manifest {
+        attributes(
+                'Created-By':               "${System.getProperty('java.version')} (${System.getProperty('java.vendor')})",
+                'Specification-Title':      '',
+                'Specification-Vendor':     'Exactpro Systems LLC',
+                'Implementation-Title':     project.archivesBaseName,
+                'Implementation-Vendor':    'Exactpro Systems LLC',
+                'Implementation-Vendor-Id': 'com.exactpro',
+                'Implementation-Version':   project.version
+        )
+    }
+}
+
+dependencies {
+    api platform('com.exactpro.th2:th2-bom:1.0.0-schema-ci.+')
+    implementation 'com.exactpro.th2:th2-common'
+    implementation 'com.exactpro.th2:th2-store-common'
+    implementation 'com.exactpro.cradle:cradle-cassandra'
+    implementation 'com.exactpro.cradle:cradle-core'
+
+    implementation "javax.xml.bind:jaxb-api:2.2.7"
+    implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.11'
+
+    implementation "io.vertx:vertx-rx-java2:$vertxVersion"
+    implementation "io.vertx:vertx-rabbitmq-client:$vertxVersion"
+    testImplementation "io.vertx:vertx-junit5:$vertxVersion"
+
+    testImplementation "org.powermock:powermock-module-junit4:2.0.2"
+    testImplementation "org.powermock:powermock-api-mockito:1.7.4"
+    testImplementation group: 'org.mockito', name: 'mockito-all', version: '1.10.19'
+
+    testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:$junitJupiterEngineVersion"
+    testImplementation "org.junit.jupiter:junit-jupiter-api:$junitJupiterEngineVersion"
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events 'PASSED', 'FAILED', 'SKIPPED'
+    }
+}
+
+application {
+    mainClassName = 'com.exactpro.th2.messagestore.DemoMessageStore'
+}
+
+applicationName = 'service'
+
+distTar {
+    archiveName "${applicationName}.tar"
+}
+
+dockerPrepare {
+    dependsOn distTar
+}
+
+docker {
+    copySpec.from(tarTree("$buildDir/distributions/${applicationName}.tar"))
 }

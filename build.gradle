@@ -88,7 +88,7 @@ test {
 }
 
 application {
-    mainClassName = 'com.exactpro.th2.messagestore.DemoMessageStore'
+    mainClassName = 'com.exactpro.th2.messagestore.MessageStore'
 }
 
 applicationName = 'service'

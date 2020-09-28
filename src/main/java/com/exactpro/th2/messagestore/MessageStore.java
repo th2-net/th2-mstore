@@ -27,7 +27,6 @@ import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.schema.cradle.CradleConfiguration;
 import com.exactpro.th2.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.schema.factory.CommonFactory;
-import com.exactpro.th2.store.common.configuration.StoreConfiguration;
 
 public class MessageStore {
 

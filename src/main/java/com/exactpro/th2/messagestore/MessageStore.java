@@ -13,6 +13,8 @@
 
 package com.exactpro.th2.messagestore;
 
+import java.net.InetAddress;
+
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +36,6 @@ public class MessageStore {
     private MessageBatchStore parsedStore;
     private RawMessageBatchStore rawStore;
     private CradleManager cradleManager;
-    private String cradleInstanceName;
 
     public MessageStore(AbstractCommonFactory factory) throws CradleStorageException {
 
@@ -55,7 +56,6 @@ public class MessageStore {
         }
 
         this.cradleManager = new CassandraCradleManager(new CassandraConnection(cassandraConnectionSettings));
-        this.cradleInstanceName = factory.getCustomConfiguration(StoreConfiguration.class).getCradleInstanceName();
 
 
         parsedStore = new MessageBatchStore(factory.getMessageRouterParsedBatch(), cradleManager);
@@ -64,6 +64,7 @@ public class MessageStore {
 
     public void start() {
         try {
+            String cradleInstanceName = InetAddress.getLocalHost().getHostName();
             cradleManager.init(cradleInstanceName);
             logger.info("Cradle manager init successfully with {} instance name", cradleInstanceName);
         } catch (Exception e) {

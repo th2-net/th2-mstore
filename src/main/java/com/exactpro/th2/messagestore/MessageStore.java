@@ -13,6 +13,9 @@
 
 package com.exactpro.th2.messagestore;
 
+import static com.exactpro.th2.metrics.CommonMetrics.setLiveness;
+import static com.exactpro.th2.metrics.CommonMetrics.setReadiness;
+
 import java.net.InetAddress;
 
 import org.apache.commons.lang3.StringUtils;
@@ -112,14 +115,25 @@ public class MessageStore {
 
     public static void main(String[] args) {
         try {
+            setLiveness(true);
             CommonFactory factory = CommonFactory.createFromArguments(args);
             MessageStore store = new MessageStore(factory);
 
-            Runtime.getRuntime().addShutdownHook(new Thread(store::dispose));
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                setReadiness(false);
+                setLiveness(false);
+
+                store.dispose();
+            }));
 
             store.start();
+            setReadiness(true);
             store.waitShutdown();
         } catch (Exception e) {
+
+            setReadiness(false);
+            setLiveness(false);
+
             e.printStackTrace();
             System.err.println("Error occurred. Exit the program");
             System.exit(-1);

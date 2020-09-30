@@ -55,9 +55,9 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:th2-bom:1.0.2')
-    implementation 'com.exactpro.th2:th2-common'
-    implementation 'com.exactpro.th2:th2-store-common'
+    api platform('com.exactpro.th2:bom:2.0.+')
+    implementation 'com.exactpro.th2:common'
+    implementation 'com.exactpro.th2:store-common'
     implementation 'com.exactpro.cradle:cradle-cassandra'
     implementation 'com.exactpro.cradle:cradle-core'
 

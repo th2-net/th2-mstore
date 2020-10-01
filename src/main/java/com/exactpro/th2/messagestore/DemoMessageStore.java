@@ -15,6 +15,22 @@
  ******************************************************************************/
 package com.exactpro.th2.messagestore;
 
+import static com.exactpro.cradle.messages.StoredMessageBatch.MAX_MESSAGES_COUNT;
+import static com.exactpro.th2.store.common.Configuration.readConfiguration;
+import static javax.xml.bind.DatatypeConverter.printHexBinary;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.cassandra.CassandraCradleManager;
 import com.exactpro.cradle.cassandra.connection.CassandraConnection;
@@ -26,28 +42,17 @@ import com.exactpro.th2.configuration.RabbitMQConfiguration;
 import com.exactpro.th2.configuration.Th2Configuration.QueueNames;
 import com.exactpro.th2.infra.grpc.Message;
 import com.exactpro.th2.infra.grpc.MessageBatch;
+import com.exactpro.th2.infra.grpc.MessageMetadata;
 import com.exactpro.th2.infra.grpc.RawMessage;
 import com.exactpro.th2.infra.grpc.RawMessageBatch;
+import com.exactpro.th2.infra.grpc.RawMessageMetadata;
 import com.exactpro.th2.store.common.CassandraConfig;
 import com.exactpro.th2.store.common.Configuration;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
 import com.google.protobuf.MessageLite;
+import com.google.protobuf.TextFormat;
 import com.rabbitmq.client.DeliverCallback;
 import com.rabbitmq.client.Delivery;
-import org.apache.commons.lang3.StringUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-
-import static com.exactpro.cradle.messages.StoredMessageBatch.MAX_MESSAGES_COUNT;
-import static com.exactpro.th2.store.common.Configuration.readConfiguration;
-import static javax.xml.bind.DatatypeConverter.printHexBinary;
 
 public class DemoMessageStore {
     private final static Logger LOGGER = LoggerFactory.getLogger(DemoMessageStore.class);
@@ -116,6 +121,13 @@ public class DemoMessageStore {
     private void storeMessageBatch(String consumerTag, Delivery delivery) {
         try {
             MessageBatch batch = MessageBatch.parseFrom(delivery.getBody());
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Proseccing message batch " + batch.getMessagesList().stream()
+                        .map(Message::getMetadata)
+                        .map(MessageMetadata::getId)
+                        .map(TextFormat::shortDebugString)
+                        .collect(Collectors.toList()));
+            }
             List<Message> messagesList = batch.getMessagesList();
             storeMessages(messagesList, ProtoUtil::toCradleMessage, cradleManager.getStorage()::storeProcessedMessageBatch);
         } catch (Exception e) {
@@ -128,6 +140,13 @@ public class DemoMessageStore {
     private void storeRawMessageBatch(String consumerTag, Delivery delivery) {
         try {
             RawMessageBatch batch = RawMessageBatch.parseFrom(delivery.getBody());
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.debug("Proseccing raw batch " + batch.getMessagesList().stream()
+                        .map(RawMessage::getMetadata)
+                        .map(RawMessageMetadata::getId)
+                        .map(TextFormat::shortDebugString)
+                        .collect(Collectors.toList()));
+            }
             List<RawMessage> messagesList = batch.getMessagesList();
             storeMessages(messagesList, ProtoUtil::toCradleMessage, cradleManager.getStorage()::storeMessageBatch);
         } catch (Exception e) {

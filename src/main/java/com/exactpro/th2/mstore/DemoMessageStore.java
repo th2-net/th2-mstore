@@ -122,7 +122,7 @@ public class DemoMessageStore {
         try {
             MessageBatch batch = MessageBatch.parseFrom(delivery.getBody());
             if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Proseccing message batch " + batch.getMessagesList().stream()
+                LOGGER.debug("Processing message batch " + batch.getMessagesList().stream()
                         .map(Message::getMetadata)
                         .map(MessageMetadata::getId)
                         .map(TextFormat::shortDebugString)
@@ -141,7 +141,7 @@ public class DemoMessageStore {
         try {
             RawMessageBatch batch = RawMessageBatch.parseFrom(delivery.getBody());
             if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Proseccing raw batch " + batch.getMessagesList().stream()
+                LOGGER.debug("Processing raw batch " + batch.getMessagesList().stream()
                         .map(RawMessage::getMetadata)
                         .map(RawMessageMetadata::getId)
                         .map(TextFormat::shortDebugString)

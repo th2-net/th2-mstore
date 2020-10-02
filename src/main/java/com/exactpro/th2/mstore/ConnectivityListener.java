@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.exactpro.th2.messagestore;
+package com.exactpro.th2.mstore;
 
 import com.exactpro.th2.RabbitMqSubscriber;
 import com.rabbitmq.client.DeliverCallback;

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  ******************************************************************************/
-package com.exactpro.th2.messagestore;
+package com.exactpro.th2.mstore;
 
 import static com.exactpro.cradle.messages.StoredMessageBatch.MAX_MESSAGES_COUNT;
 import static com.exactpro.th2.store.common.Configuration.readConfiguration;
@@ -40,12 +40,12 @@ import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.RabbitMqSubscriber;
 import com.exactpro.th2.configuration.RabbitMQConfiguration;
 import com.exactpro.th2.configuration.Th2Configuration.QueueNames;
-import com.exactpro.th2.infra.grpc.Message;
-import com.exactpro.th2.infra.grpc.MessageBatch;
-import com.exactpro.th2.infra.grpc.MessageMetadata;
-import com.exactpro.th2.infra.grpc.RawMessage;
-import com.exactpro.th2.infra.grpc.RawMessageBatch;
-import com.exactpro.th2.infra.grpc.RawMessageMetadata;
+import com.exactpro.th2.common.grpc.Message;
+import com.exactpro.th2.common.grpc.MessageBatch;
+import com.exactpro.th2.common.grpc.MessageMetadata;
+import com.exactpro.th2.common.grpc.RawMessage;
+import com.exactpro.th2.common.grpc.RawMessageBatch;
+import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.store.common.CassandraConfig;
 import com.exactpro.th2.store.common.Configuration;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
@@ -122,7 +122,7 @@ public class DemoMessageStore {
         try {
             MessageBatch batch = MessageBatch.parseFrom(delivery.getBody());
             if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Proseccing message batch " + batch.getMessagesList().stream()
+                LOGGER.debug("Processing message batch " + batch.getMessagesList().stream()
                         .map(Message::getMetadata)
                         .map(MessageMetadata::getId)
                         .map(TextFormat::shortDebugString)
@@ -141,7 +141,7 @@ public class DemoMessageStore {
         try {
             RawMessageBatch batch = RawMessageBatch.parseFrom(delivery.getBody());
             if (LOGGER.isDebugEnabled()) {
-                LOGGER.debug("Proseccing raw batch " + batch.getMessagesList().stream()
+                LOGGER.debug("Processing raw batch " + batch.getMessagesList().stream()
                         .map(RawMessage::getMetadata)
                         .map(RawMessageMetadata::getId)
                         .map(TextFormat::shortDebugString)

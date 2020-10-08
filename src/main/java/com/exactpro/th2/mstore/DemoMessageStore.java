@@ -164,19 +164,15 @@ public class DemoMessageStore {
         }
 
         LOGGER.debug("Process {} messages started, max {}", messagesList.size(), MAX_MESSAGES_COUNT);
-        for(int from = 0; from < messagesList.size(); from += MAX_MESSAGES_COUNT) {
-            List<T> storedMessages = messagesList.subList(from, Math.min(from + MAX_MESSAGES_COUNT, messagesList.size()));
 
-            StoredMessageBatch storedMessageBatch = new StoredMessageBatch();
-            for (int index = 0; index < storedMessages.size(); index++) {
-                T message = storedMessages.get(index);
-                storedMessageBatch.addMessage(convertToMessageToStore.apply(message));
-            }
-            cradleStoredMessageBatchFunction.store(storedMessageBatch);
-            LOGGER.debug("Message Batch stored: stream '{}', direction '{}', id '{}', size '{}'",
-                storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(), storedMessageBatch.getMessageCount());
+        StoredMessageBatch storedMessageBatch = new StoredMessageBatch();
+        for (T message : messagesList) {
+            storedMessageBatch.addMessage(convertToMessageToStore.apply(message));
         }
-        LOGGER.debug("Process {} messages finished", messagesList.size());
+        cradleStoredMessageBatchFunction.store(storedMessageBatch);
+
+        LOGGER.debug("Message Batch stored: stream '{}', direction '{}', id '{}', size '{}'",
+                storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(), storedMessageBatch.getMessageCount());
     }
 
     @FunctionalInterface

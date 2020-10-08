@@ -1,4 +1,4 @@
-/******************************************************************************
+/*
  * Copyright 2020-2020 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,26 +12,35 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- ******************************************************************************/
+ */
 package com.exactpro.th2.messagestore;
 
 import static com.exactpro.cradle.messages.StoredMessageBatch.MAX_MESSAGES_COUNT;
 import static com.exactpro.th2.store.common.Configuration.readConfiguration;
 import static javax.xml.bind.DatatypeConverter.printHexBinary;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.ImmutablePair;
+import org.apache.commons.lang3.tuple.Pair;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.Direction;
 import com.exactpro.cradle.cassandra.CassandraCradleManager;
 import com.exactpro.cradle.cassandra.connection.CassandraConnection;
 import com.exactpro.cradle.messages.MessageToStore;
@@ -55,9 +64,11 @@ import com.rabbitmq.client.DeliverCallback;
 import com.rabbitmq.client.Delivery;
 
 public class DemoMessageStore {
-    private final static Logger LOGGER = LoggerFactory.getLogger(DemoMessageStore.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(DemoMessageStore.class);
     private final Configuration configuration;
     private final List<Subscriber> subscribers;
+    private final Map<Pair<String, Direction>, AtomicLong> sessionToLastSequenceRaw = new ConcurrentHashMap<>();
+    private final Map<Pair<String, Direction>, AtomicLong> sessionToLastSequenceParsed = new ConcurrentHashMap<>();
     private CradleManager cradleManager;
 
     public DemoMessageStore(Configuration configuration) {
@@ -92,16 +103,16 @@ public class DemoMessageStore {
     private List<Subscriber> createSubscribers(RabbitMQConfiguration rabbitMQ,
                                                Map<String, QueueNames> connectivityServices) {
         List<Subscriber> subscribers = new ArrayList<>();
-        for (Map.Entry<String, QueueNames> queueNamesEntry : connectivityServices.entrySet()) {
-            Subscriber subscriber = createSubscriber(rabbitMQ, queueNamesEntry.getValue(), queueNamesEntry.getKey());
+        connectivityServices.forEach((key, value) -> {
+            Subscriber subscriber = createSubscriber(rabbitMQ, value, key);
             if (subscriber != null) {
                 subscribers.add(subscriber);
             }
-        }
+        });
         return Collections.unmodifiableList(subscribers);
     }
 
-    private Subscriber createSubscriber(RabbitMQConfiguration rabbitMQ, QueueNames queueNames, String key) {
+    private @Nullable Subscriber createSubscriber(RabbitMQConfiguration rabbitMQ, QueueNames queueNames, String key) {
         try {
             RabbitMqSubscriber outMsgSubscriber = createRabbitMqSubscriber(queueNames.getOutQueueName(),
                     queueNames.getExchangeName(), this::storeMessageBatch);
@@ -112,7 +123,7 @@ public class DemoMessageStore {
             RabbitMqSubscriber inRawMsgSubscriber = createRabbitMqSubscriber(queueNames.getInRawQueueName(),
                     queueNames.getExchangeName(), this::storeRawMessageBatch);
             return new Subscriber(rabbitMQ, inMsgSubscriber, outMsgSubscriber, inRawMsgSubscriber, outRawMsgSubscriber);
-        } catch (Exception e) {
+        } catch (RuntimeException e) {
             LOGGER.error("Could not create subscriber for '{}' connectivity", key, e);
         }
         return null;
@@ -129,8 +140,8 @@ public class DemoMessageStore {
                         .collect(Collectors.toList()));
             }
             List<Message> messagesList = batch.getMessagesList();
-            storeMessages(messagesList, ProtoUtil::toCradleMessage, cradleManager.getStorage()::storeProcessedMessageBatch);
-        } catch (Exception e) {
+            storeMessages(messagesList, ProtoUtil::toCradleMessage, this::checkSequenceParsed, cradleManager.getStorage()::storeProcessedMessageBatch);
+        } catch (CradleStorageException | IOException | RuntimeException e) {
             LOGGER.error("'{}':'{}' could not store message.",
                     delivery.getEnvelope().getExchange(), delivery.getEnvelope().getRoutingKey(), e);
             LOGGER.error("message body: {}", printHexBinary(delivery.getBody()));
@@ -148,16 +159,16 @@ public class DemoMessageStore {
                         .collect(Collectors.toList()));
             }
             List<RawMessage> messagesList = batch.getMessagesList();
-            storeMessages(messagesList, ProtoUtil::toCradleMessage, cradleManager.getStorage()::storeMessageBatch);
-        } catch (Exception e) {
+            storeMessages(messagesList, ProtoUtil::toCradleMessage, this::checkSequenceRaw, cradleManager.getStorage()::storeMessageBatch);
+        } catch (CradleStorageException | IOException | RuntimeException e) {
             LOGGER.error("'{}':'{}' could not store message batch.",
                     delivery.getEnvelope().getExchange(), delivery.getEnvelope().getRoutingKey(), e);
             LOGGER.error("batch body: {}", printHexBinary(delivery.getBody()));
         }
     }
 
-    private <T extends MessageLite> void storeMessages(List<T> messagesList, Function<T, MessageToStore> convertToMessageToStore,
-                                                       CradleStoredMessageBatchFunction cradleStoredMessageBatchFunction) throws CradleStorageException, IOException {
+    private static <T extends MessageLite> void storeMessages(List<T> messagesList, Function<T, MessageToStore> convertToMessageToStore, Consumer<MessageToStore> checkSequence,
+            CradleStoredMessageBatchFunction cradleStoredMessageBatchFunction) throws CradleStorageException, IOException {
         if (messagesList.isEmpty()) {
             LOGGER.warn("Empty batch has been received"); //FIXME: need identify
             return;
@@ -167,7 +178,9 @@ public class DemoMessageStore {
 
         StoredMessageBatch storedMessageBatch = new StoredMessageBatch();
         for (T message : messagesList) {
-            storedMessageBatch.addMessage(convertToMessageToStore.apply(message));
+            MessageToStore messageToStore = convertToMessageToStore.apply(message);
+            checkSequence.accept(messageToStore);
+            storedMessageBatch.addMessage(messageToStore);
         }
         cradleStoredMessageBatchFunction.store(storedMessageBatch);
 
@@ -175,18 +188,53 @@ public class DemoMessageStore {
                 storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(), storedMessageBatch.getMessageCount());
     }
 
+    private static void checkSequence(Map<Pair<String, Direction>, AtomicLong> sessionToLastSequence, CradleLastSequnceFunction lastSequnceFunction, MessageToStore messageToStore) {
+        long lastSequenceNumber = sessionToLastSequence
+                .computeIfAbsent(createSessessionKey(messageToStore), sessionKey -> {
+                    try {
+                        long lastMessageIndex = lastSequnceFunction.getLastSequence(sessionKey.getLeft(), sessionKey.getRight());
+                        LOGGER.info("Last message index for the {} session is {}", sessionKey, lastMessageIndex);
+                        return new AtomicLong(lastMessageIndex);
+                    } catch (IOException e) {
+                        String error = "Couldn't get last message index for the " + sessionKey + " session";
+                        LOGGER.error(error, e);
+                        throw new RuntimeException(error, e);
+                    }
+                })
+                .accumulateAndGet(messageToStore.getIndex(), Math::max);
+        if (lastSequenceNumber != messageToStore.getIndex()) {
+            throw new RuntimeException("Sequeance '" + messageToStore.getIndex() + "' of stored message should be greater than " + lastSequenceNumber);
+        }
+    }
+
+    private void checkSequenceRaw(MessageToStore messageToStore) {
+        checkSequence(sessionToLastSequenceRaw, cradleManager.getStorage()::getLastMessageIndex, messageToStore);
+    }
+
+    private void checkSequenceParsed(MessageToStore messageToStore) {
+        checkSequence(sessionToLastSequenceParsed, cradleManager.getStorage()::getLastProcessedMessageIndex, messageToStore);
+    }
+
+    private static Pair<String, Direction> createSessessionKey(MessageToStore messageToStore) {
+        return new ImmutablePair<>(messageToStore.getStreamName(), messageToStore.getDirection());
+    }
+
     @FunctionalInterface
     private interface CradleStoredMessageBatchFunction {
         void store(StoredMessageBatch storedMessageBatch) throws IOException;
     }
 
-    private RabbitMqSubscriber createRabbitMqSubscriber(String queueName, String exchangeName, DeliverCallback deliverCallback) {
+    @FunctionalInterface
+    private interface CradleLastSequnceFunction {
+        long getLastSequence(String sessionAlias, Direction direction) throws IOException;
+    }
+
+    private static @Nullable RabbitMqSubscriber createRabbitMqSubscriber(String queueName, String exchangeName, DeliverCallback deliverCallback) {
         if (StringUtils.isEmpty(queueName)) {
             return null;
-        }  else {
-            LOGGER.info("Subscriber created for '{}':'{}'", exchangeName, queueName);
-            return new RabbitMqSubscriber(exchangeName, deliverCallback, null, queueName);
         }
+        LOGGER.info("Subscriber created for '{}':'{}'", exchangeName, queueName);
+        return new RabbitMqSubscriber(exchangeName, deliverCallback, null, queueName);
     }
 
     private static class Subscriber {
@@ -196,9 +244,9 @@ public class DemoMessageStore {
         private final RabbitMqSubscriber inRawSubscriber;
         private final RabbitMqSubscriber outRawSubscriber;
 
-        private Subscriber(RabbitMQConfiguration rabbitMQ, RabbitMqSubscriber inSubscriber,
-                           RabbitMqSubscriber outSubscriber, RabbitMqSubscriber inRawMsgSubscriber,
-                           RabbitMqSubscriber outRawMsgSubscriber) {
+        private Subscriber(RabbitMQConfiguration rabbitMQ, @Nullable RabbitMqSubscriber inSubscriber,
+                @Nullable RabbitMqSubscriber outSubscriber, @Nullable RabbitMqSubscriber inRawMsgSubscriber,
+                @Nullable RabbitMqSubscriber outRawMsgSubscriber) {
             this.rabbitMQ = rabbitMQ;
             this.inSubscriber = inSubscriber;
             this.outSubscriber = outSubscriber;
@@ -220,25 +268,25 @@ public class DemoMessageStore {
             dispose(outRawSubscriber);
         }
 
-        private void dispose(RabbitMqSubscriber subscriber) {
+        private static void dispose(@Nullable Closeable subscriber) {
             if (subscriber == null) {
                 return;
             }
             try {
                 subscriber.close();
-            } catch (Exception e) {
+            } catch (IOException | RuntimeException e) {
                 LOGGER.error("Could not dispose the mq subscriber", e);
             }
         }
 
-        private void subscribe(RabbitMqSubscriber subscriber) {
+        private void subscribe(@Nullable RabbitMqSubscriber subscriber) {
             if (subscriber == null) {
                 return;
             }
             try {
                 subscriber.startListening(rabbitMQ.getHost(), rabbitMQ.getVirtualHost(), rabbitMQ.getPort(),
                         rabbitMQ.getUsername(), rabbitMQ.getPassword());
-            } catch (Exception e) {
+            } catch (IOException | TimeoutException | RuntimeException e) {
                 LOGGER.error("Could not subscribe to queue", e);
             }
         }
@@ -251,7 +299,7 @@ public class DemoMessageStore {
             messageStore.init();
             messageStore.startAndBlock();
             Runtime.getRuntime().addShutdownHook(new Thread(messageStore::dispose));
-        } catch (Exception e) {
+        } catch (CradleStorageException | InterruptedException | RuntimeException e) {
             LOGGER.error(e.getMessage(), e);
             LOGGER.error("Error occurred. Exit the program");
             System.exit(-1);

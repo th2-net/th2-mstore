@@ -51,8 +51,8 @@ public abstract class AbstractMessageStore<T> extends AbstractStorage<T> {
                 storedMessageBatch.addMessage(convertToMessageToStore.apply(message));
             }
             cradleStoredMessageBatchFunction.store(storedMessageBatch);
-            logger.debug("Message Batch stored: stream '{}', direction '{}', id '{}', size '{}'",
-                    storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(), storedMessageBatch.getMessageCount());
+            logger.debug("Message Batch stored: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
+                    storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(), storedMessageBatch.getMessageCount(), storedMessageBatch.getMessages());
         }
         logger.debug("Process {} messages finished", messagesList.size());
     }

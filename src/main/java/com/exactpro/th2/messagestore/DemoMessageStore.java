@@ -201,9 +201,10 @@ public class DemoMessageStore {
                         throw new RuntimeException(error, e);
                     }
                 })
-                .accumulateAndGet(messageToStore.getIndex(), Math::max);
-        if (lastSequenceNumber != messageToStore.getIndex()) {
-            throw new RuntimeException("Sequeance '" + messageToStore.getIndex() + "' of stored message should be greater than " + lastSequenceNumber);
+                .getAndAccumulate(messageToStore.getIndex(), Math::max);
+        if (lastSequenceNumber >= messageToStore.getIndex()) {
+            throw new RuntimeException("Sequeance '" + messageToStore.getStreamName() + ':' + messageToStore.getDirection() + ':' + messageToStore.getIndex()
+                    + "' of stored message should be greater than " + lastSequenceNumber);
         }
     }
 

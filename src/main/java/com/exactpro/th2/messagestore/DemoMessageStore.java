@@ -35,6 +35,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.cassandra.CassandraCradleManager;
+import com.exactpro.cradle.cassandra.connection.CassandraConnection;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.cradle.utils.CradleStorageException;
@@ -47,6 +49,7 @@ import com.exactpro.th2.infra.grpc.MessageMetadata;
 import com.exactpro.th2.infra.grpc.RawMessage;
 import com.exactpro.th2.infra.grpc.RawMessageBatch;
 import com.exactpro.th2.infra.grpc.RawMessageMetadata;
+import com.exactpro.th2.store.common.CassandraConfig;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.MessageLite;
@@ -66,9 +69,9 @@ public class DemoMessageStore {
     }
 
     public void init() throws CradleStorageException {
-//        CassandraConfig cassandraConfig = configuration.getCassandraConfig();
-//        cradleManager = new CassandraCradleManager(new CassandraConnection(cassandraConfig.getConnectionSettings()));
-//        cradleManager.init(configuration.getCradleInstanceName());
+        CassandraConfig cassandraConfig = configuration.getCassandraConfig();
+        cradleManager = new CassandraCradleManager(new CassandraConnection(cassandraConfig.getConnectionSettings()));
+        cradleManager.init(configuration.getCradleInstanceName());
         LOGGER.info("cradle init successfully with {} instance name", configuration.getCradleInstanceName() );
     }
 

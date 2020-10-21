@@ -108,14 +108,14 @@ public class DemoMessageStore {
     private List<Subscriber> createSubscribers(RabbitMQConfiguration rabbitMQ,
                                                Map<String, QueueNames> connectivityServices) {
         List<Subscriber> subscribers = new ArrayList<>();
-        for (Map.Entry<String, QueueNames> queueNamesEntry : connectivityServices.entrySet()) {
+        connectivityServices.forEach((boxAlias, queueNames) -> {
             try {
-                Subscriber subscriber = createSubscriber(rabbitMQ, queueNamesEntry.getValue(), queueNamesEntry.getKey());
+                Subscriber subscriber = createSubscriber(rabbitMQ, queueNames, boxAlias);
                 subscribers.add(subscriber);
             } catch (RuntimeException e) {
-                LOGGER.error("Could not create a subscriber for '{}' box", queueNamesEntry.getKey(), e);
+                LOGGER.error("Could not create a subscriber for '{}' box", boxAlias, e);
             }
-        }
+        });
 
         if (configuration.isCheckSubscriptionsOnStart()
             && subscribers.size() != connectivityServices.size()) {
@@ -232,18 +232,18 @@ public class DemoMessageStore {
         public void start() {
             List<Throwable> suppressedExceptions = new ArrayList<>();
 
-            for (Entry<String, RabbitMqSubscriber> pair : subscriptionKeyToSubscriber.entrySet()) {
+            subscriptionKeyToSubscriber.forEach((subscriptionKey, subscriber) -> {
                 try {
-                    pair.getValue().startListening(rabbitMQ.getHost(), rabbitMQ.getVirtualHost(), rabbitMQ.getPort(),
+                    subscriber.startListening(rabbitMQ.getHost(), rabbitMQ.getVirtualHost(), rabbitMQ.getPort(),
                             rabbitMQ.getUsername(), rabbitMQ.getPassword(), "mstore");
-                    LOGGER.info("Suscribed to {}", pair.getKey());
+                    LOGGER.info("Suscribed to {}", subscriptionKey);
                 } catch (TimeoutException | IOException | RuntimeException e) {
-                    suppressedExceptions.add(new IllegalStateException("Could not subscribe to '" + pair.getKey() + '\'', e));
+                    suppressedExceptions.add(new IllegalStateException("Could not subscribe to '" + subscriptionKey + '\'', e));
                 }
-            }
+            });
 
             if (!suppressedExceptions.isEmpty()) {
-                RuntimeException exception = new IllegalStateException("S``ubscription to routing keys of the '" + boxAlias + "' box failure. "
+                RuntimeException exception = new IllegalStateException("Subscription to routing keys of the '" + boxAlias + "' box failure. "
                         + "Expected " + subscriptionKeyToSubscriber.size()
                         + ", failured " + suppressedExceptions.size());
 
@@ -256,13 +256,13 @@ public class DemoMessageStore {
         }
 
         public void dispose() {
-            for (Entry<String, RabbitMqSubscriber> pair : subscriptionKeyToSubscriber.entrySet()) {
+            subscriptionKeyToSubscriber.forEach((subscriptionKey, subscriber) -> {
                 try {
-                    pair.getValue().close();
+                    subscriber.close();
                 } catch (Exception e) {
-                    LOGGER.error("Could not dispose the mq subscriber to '" + pair.getKey() + "' routing key", e);
+                    LOGGER.error("Could not dispose the mq subscriber to '" + subscriptionKey + "' routing key", e);
                 }
-            }
+            });
         }
     }
 

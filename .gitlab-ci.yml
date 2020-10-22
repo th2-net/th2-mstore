@@ -1,7 +1,7 @@
 variables:
   APP_NAME: "th2-message-store"
   MAJOR_VERSION: "1"
-  MINOR_VERSION: "5"
+  MINOR_VERSION: "6"
   MAINTENANCE_VERSION: '0'
 
 include:

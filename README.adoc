@@ -14,7 +14,10 @@ CASSANDRA_KEYSPACE=some_keyspace
 CASSANDRA_USERNAME=some_user
 CASSANDRA_INSTANCE=some_instance
 CASSANDRA_PASSWORD=some_pass
+CHECK_SUBSCRIPTIONS_ON_START=false
 ```
+
+* CHECK_SUBSCRIPTIONS_ON_START - Box shutdowns when any subscription failure during start if this value is 'true' otherwise it continues work with incomplete set of subscriptions.
 
 == Help
 

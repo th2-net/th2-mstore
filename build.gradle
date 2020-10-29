@@ -26,13 +26,17 @@ repositories {
     }
     mavenCentral()
     maven {
-        name 'Artifactory snapshot'
-        url 'http://artifactory5.exp.exactpro.com/artifactory/libs-snapshot'
-    }
-    maven {
-        name 'Artifactory release'
-        url 'http://artifactory5.exp.exactpro.com/artifactory/libs-release'
-    }
+        name 'Schema snapshot'
+            url 'http://artifactory5.exp.exactpro.com/artifactory/th2-schema-snapshot-local'
+        }
+        maven {
+            name 'Artifactory snapshot'
+            url 'http://artifactory5.exp.exactpro.com/artifactory/libs-snapshot'
+        }
+        maven {
+            name 'Artifactory release'
+            url 'http://artifactory5.exp.exactpro.com/artifactory/libs-release'
+        }
 
     configurations.all {
         resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
@@ -55,7 +59,7 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:2.0.+')
+    api platform('com.exactpro.th2:bom:2.1.+')
 
     implementation 'com.exactpro.th2:common'
     implementation 'com.exactpro.th2:grpc-common'
@@ -70,6 +74,8 @@ dependencies {
     implementation "io.vertx:vertx-rx-java2:$vertxVersion"
     implementation "io.vertx:vertx-rabbitmq-client:$vertxVersion"
     testImplementation "io.vertx:vertx-junit5:$vertxVersion"
+
+    implementation "org.jetbrains:annotations:20.0.0"
 
     testImplementation "org.powermock:powermock-module-junit4:2.0.2"
     testImplementation "org.powermock:powermock-api-mockito:1.7.4"
@@ -87,7 +93,7 @@ test {
 }
 
 application {
-    mainClassName = 'com.exactpro.th2.mstore.DemoMessageStore'
+    mainClassName = 'com.exactpro.th2.mstore.MessageStore'
 }
 
 applicationName = 'service'

@@ -18,47 +18,25 @@ import static com.exactpro.th2.common.metrics.CommonMetrics.setReadiness;
 
 import java.net.InetAddress;
 
-import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.exactpro.cradle.CradleManager;
-import com.exactpro.cradle.cassandra.CassandraCradleManager;
-import com.exactpro.cradle.cassandra.connection.CassandraConnection;
-import com.exactpro.cradle.cassandra.connection.CassandraConnectionSettings;
 import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.schema.cradle.CradleConfiguration;
 import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
+import com.exactpro.th2.store.common.utils.CradleUtil;
 
 public class MessageStore {
 
     private final Logger logger = LoggerFactory.getLogger(this.getClass() + "@" + this.hashCode());
 
-    private com.exactpro.th2.mstore.MessageBatchStore parsedStore;
-    private com.exactpro.th2.mstore.RawMessageBatchStore rawStore;
+    private MessageBatchStore parsedStore;
+    private RawMessageBatchStore rawStore;
     private CradleManager cradleManager;
 
     public MessageStore(AbstractCommonFactory factory) throws CradleStorageException {
-
-        CradleConfiguration cradleConfiguration = factory.getCradleConfiguration();
-
-        CassandraConnectionSettings cassandraConnectionSettings = new CassandraConnectionSettings(
-                cradleConfiguration.getDataCenter(),
-                cradleConfiguration.getHost(),
-                cradleConfiguration.getPort(),
-                cradleConfiguration.getKeyspace());
-
-        if (StringUtils.isNotEmpty(cradleConfiguration.getUsername())) {
-            cassandraConnectionSettings.setUsername(cradleConfiguration.getUsername());
-        }
-
-        if (StringUtils.isNotEmpty(cradleConfiguration.getPassword())) {
-            cassandraConnectionSettings.setPassword(cradleConfiguration.getPassword());
-        }
-
-        this.cradleManager = new CassandraCradleManager(new CassandraConnection(cassandraConnectionSettings));
-
+        this.cradleManager = CradleUtil.createCradleManager(factory.getCradleConfiguration());
 
         parsedStore = new MessageBatchStore(factory.getMessageRouterParsedBatch(), cradleManager);
         rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(), cradleManager);

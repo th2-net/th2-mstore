@@ -14,6 +14,7 @@
 package com.exactpro.th2.mstore;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -21,9 +22,13 @@ import com.exactpro.cradle.CradleManager;
 import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageBatch;
 import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
 
 public class MessageBatchStore extends AbstractMessageStore<MessageBatch> {
+    private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.PARSED)
+            .map(QueueAttribute::toString)
+            .toArray(String[]::new);
 
     public MessageBatchStore(MessageRouter<MessageBatch> router, @NotNull CradleManager cradleManager) {
         super(router, cradleManager);
@@ -31,7 +36,7 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch> {
 
     @Override
     protected String[] getAttributes() {
-        return new String[]{"subscribe", "parsed"};
+        return ATTRIBUTES;
     }
 
     @Override
@@ -40,7 +45,7 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch> {
             List<Message> messagesList = batch.getMessagesList();
             storeMessages(messagesList, ProtoUtil::toCradleMessage, getCradleManager().getStorage()::storeProcessedMessageBatch);
         } catch (Exception e) {
-            logger.error("Can not store parsed message batch:  '{}'", batch, e);
+            logger.error("Cannot store parsed message batch:  '{}'", batch, e);
         }
     }
 

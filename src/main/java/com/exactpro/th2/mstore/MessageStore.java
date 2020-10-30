@@ -17,23 +17,28 @@ import static com.exactpro.th2.common.metrics.CommonMetrics.setLiveness;
 import static com.exactpro.th2.common.metrics.CommonMetrics.setReadiness;
 
 import java.net.InetAddress;
+import java.util.Deque;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.utils.CradleStorageException;
+import com.exactpro.th2.common.metrics.CommonMetrics;
 import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
 import com.exactpro.th2.store.common.utils.CradleUtil;
 
 public class MessageStore {
 
-    private final Logger logger = LoggerFactory.getLogger(this.getClass() + "@" + this.hashCode());
+    private static final Logger logger = LoggerFactory.getLogger(MessageStore.class);
 
-    private MessageBatchStore parsedStore;
-    private RawMessageBatchStore rawStore;
-    private CradleManager cradleManager;
+    private final MessageBatchStore parsedStore;
+    private final RawMessageBatchStore rawStore;
+    private final CradleManager cradleManager;
 
     public MessageStore(AbstractCommonFactory factory) throws CradleStorageException {
         this.cradleManager = CradleUtil.createCradleManager(factory.getCradleConfiguration());
@@ -74,48 +79,78 @@ public class MessageStore {
         try {
             parsedStore.dispose();
         } catch (Exception e) {
-            throw new IllegalStateException("Can not dispose storage for parsed messages", e);
+            logger.error("Cannot dispose storage for parsed messages", e);
         }
 
         try {
             rawStore.dispose();
         } catch (Exception e) {
-            throw new IllegalStateException("Can not dispose storage for raw messages", e);
+            logger.error("Cannot dispose storage for raw messages", e);
         }
-        logger.info("Storage was stopped");
-    }
-
-    public void waitShutdown() throws InterruptedException {
-        synchronized (this) {
-            wait();
-        }
+        logger.info("Storage stopped");
     }
 
     public static void main(String[] args) {
+        Deque<AutoCloseable> resources = new ConcurrentLinkedDeque<>();
+        ReentrantLock lock = new ReentrantLock();
+        Condition condition = lock.newCondition();
+
+        configureShutdownHook(resources, lock, condition);
         try {
             setLiveness(true);
             CommonFactory factory = CommonFactory.createFromArguments(args);
+            resources.add(factory);
+            CradleManager cradleManager = CradleUtil.createCradleManager(factory.getCradleConfiguration());
+            resources.add(cradleManager::dispose);
             MessageStore store = new MessageStore(factory);
-
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                setReadiness(false);
-                setLiveness(false);
-
-                store.dispose();
-            }));
-
+            resources.add(store::dispose);
             store.start();
             setReadiness(true);
-            store.waitShutdown();
+            logger.info("message store started");
+            awaitShutdown(lock, condition);
+        } catch (InterruptedException e) {
+            logger.info("The main thread interupted", e);
         } catch (Exception e) {
-
-            setReadiness(false);
-            setLiveness(false);
-
-            e.printStackTrace();
-            System.err.println("Error occurred. Exit the program");
-            System.exit(-1);
+            logger.error("Fatal error: {}", e.getMessage(), e);
+            System.exit(1);
         }
+    }
+
+    private static void awaitShutdown(ReentrantLock lock, Condition condition) throws InterruptedException {
+        try {
+            lock.lock();
+            logger.info("Wait shutdown");
+            condition.await();
+            logger.info("App shutdowned");
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private static void configureShutdownHook(Deque<AutoCloseable> resources, ReentrantLock lock, Condition condition) {
+        Runtime.getRuntime().addShutdownHook(new Thread("Shutdown hook") {
+            @Override
+            public void run() {
+                logger.info("Shutdown start");
+                setReadiness(false);
+                try {
+                    lock.lock();
+                    condition.signalAll();
+                } finally {
+                    lock.unlock();
+                }
+
+                resources.descendingIterator().forEachRemaining(resource -> {
+                    try {
+                        resource.close();
+                    } catch (Exception e) {
+                        logger.error(e.getMessage(), e);
+                    }
+                });
+                setLiveness(false);
+                logger.info("Shutdown end");
+            }
+        });
     }
 }
 

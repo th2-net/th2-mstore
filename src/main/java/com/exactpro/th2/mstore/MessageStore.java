@@ -27,7 +27,6 @@ import org.slf4j.LoggerFactory;
 
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.metrics.CommonMetrics;
 import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
 import com.exactpro.th2.store.common.utils.CradleUtil;
@@ -100,7 +99,7 @@ public class MessageStore {
             setLiveness(true);
             CommonFactory factory = CommonFactory.createFromArguments(args);
             resources.add(factory);
-            CradleManager cradleManager = CradleUtil.createCradleManager(factory.getCradleConfiguration());
+            CradleManager cradleManager = factory.getCradleManager();
             resources.add(cradleManager::dispose);
             MessageStore store = new MessageStore(factory);
             resources.add(store::dispose);

@@ -15,11 +15,9 @@ package com.exactpro.th2.mstore;
 
 import static com.exactpro.th2.common.metrics.CommonMetrics.setLiveness;
 import static com.exactpro.th2.common.metrics.CommonMetrics.setReadiness;
-import static java.util.Objects.requireNonNull;
 
 import java.net.InetAddress;
 import java.util.Deque;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -29,10 +27,8 @@ import org.slf4j.LoggerFactory;
 
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.metrics.CommonMetrics;
 import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
-import com.exactpro.th2.mstore.configuration.MessageStoreConfiguration;
 import com.exactpro.th2.store.common.utils.CradleUtil;
 
 public class MessageStore {
@@ -103,9 +99,7 @@ public class MessageStore {
             setLiveness(true);
             CommonFactory factory = CommonFactory.createFromArguments(args);
             resources.add(factory);
-            MessageStoreConfiguration configuration = factory.getCustomConfiguration(MessageStoreConfiguration.class);
-            CradleManager cradleManager = CradleUtil.createCradleManager(factory.getCradleConfiguration(),
-                    requireNonNull(configuration.getCradleInstanceName(), "Cradle instance name cannot be null"));
+            CradleManager cradleManager = factory.getCradleManager();
             resources.add(cradleManager::dispose);
             MessageStore store = new MessageStore(factory);
             resources.add(store::dispose);

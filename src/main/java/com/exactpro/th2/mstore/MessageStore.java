@@ -16,7 +16,6 @@ package com.exactpro.th2.mstore;
 import static com.exactpro.th2.common.metrics.CommonMetrics.setLiveness;
 import static com.exactpro.th2.common.metrics.CommonMetrics.setReadiness;
 
-import java.net.InetAddress;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.locks.Condition;
@@ -29,48 +28,33 @@ import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
-import com.exactpro.th2.store.common.utils.CradleUtil;
 
 public class MessageStore {
 
-    private static final Logger logger = LoggerFactory.getLogger(MessageStore.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(MessageStore.class);
 
     private final MessageBatchStore parsedStore;
     private final RawMessageBatchStore rawStore;
     private final CradleManager cradleManager;
 
     public MessageStore(AbstractCommonFactory factory) throws CradleStorageException {
-        this.cradleManager = CradleUtil.createCradleManager(factory.getCradleConfiguration());
-
+        cradleManager = factory.getCradleManager();
         parsedStore = new MessageBatchStore(factory.getMessageRouterParsedBatch(), cradleManager);
         rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(), cradleManager);
     }
 
     public void start() {
         try {
-            String cradleInstanceName = InetAddress.getLocalHost().getHostName();
-            cradleManager.init(cradleInstanceName);
-            logger.info("Cradle manager init successfully with {} instance name", cradleInstanceName);
-        } catch (Exception e) {
-            throw new IllegalStateException("Can not create cradle manager", e);
-        }
-
-        try {
             parsedStore.start();
         } catch (Exception e) {
-            throw new IllegalStateException("Can not start storage for parsed messages", e);
+            throw new IllegalStateException("Cannot start storage for parsed messages", e);
         }
 
         try {
             rawStore.start();
-            logger.info("Message store start successfully");
+            LOGGER.info("Message store start successfully");
         } catch (Exception e) {
-            try {
-                parsedStore.dispose();
-            } finally {
-                throw new IllegalStateException("Can not start storage for raw messages", e);
-            }
-
+            throw new IllegalStateException("Cannot start storage for raw messages", e);
         }
     }
 
@@ -78,15 +62,21 @@ public class MessageStore {
         try {
             parsedStore.dispose();
         } catch (Exception e) {
-            logger.error("Cannot dispose storage for parsed messages", e);
+            LOGGER.error("Cannot dispose storage for parsed messages", e);
         }
 
         try {
             rawStore.dispose();
         } catch (Exception e) {
-            logger.error("Cannot dispose storage for raw messages", e);
+            LOGGER.error("Cannot dispose storage for raw messages", e);
         }
-        logger.info("Storage stopped");
+
+        try {
+            cradleManager.dispose();
+        } catch (Exception e) {
+            LOGGER.error("Cannot dispose cradle manager", e);
+        }
+        LOGGER.info("Storage stopped");
     }
 
     public static void main(String[] args) {
@@ -99,18 +89,16 @@ public class MessageStore {
             setLiveness(true);
             CommonFactory factory = CommonFactory.createFromArguments(args);
             resources.add(factory);
-            CradleManager cradleManager = factory.getCradleManager();
-            resources.add(cradleManager::dispose);
             MessageStore store = new MessageStore(factory);
             resources.add(store::dispose);
             store.start();
             setReadiness(true);
-            logger.info("message store started");
+            LOGGER.info("message store started");
             awaitShutdown(lock, condition);
         } catch (InterruptedException e) {
-            logger.info("The main thread interupted", e);
+            LOGGER.info("The main thread interupted", e);
         } catch (Exception e) {
-            logger.error("Fatal error: {}", e.getMessage(), e);
+            LOGGER.error("Fatal error: {}", e.getMessage(), e);
             System.exit(1);
         }
     }
@@ -118,9 +106,9 @@ public class MessageStore {
     private static void awaitShutdown(ReentrantLock lock, Condition condition) throws InterruptedException {
         try {
             lock.lock();
-            logger.info("Wait shutdown");
+            LOGGER.info("Wait shutdown");
             condition.await();
-            logger.info("App shutdowned");
+            LOGGER.info("App shutdowned");
         } finally {
             lock.unlock();
         }
@@ -130,7 +118,7 @@ public class MessageStore {
         Runtime.getRuntime().addShutdownHook(new Thread("Shutdown hook") {
             @Override
             public void run() {
-                logger.info("Shutdown start");
+                LOGGER.info("Shutdown start");
                 setReadiness(false);
                 try {
                     lock.lock();
@@ -143,11 +131,11 @@ public class MessageStore {
                     try {
                         resource.close();
                     } catch (Exception e) {
-                        logger.error(e.getMessage(), e);
+                        LOGGER.error(e.getMessage(), e);
                     }
                 });
                 setLiveness(false);
-                logger.info("Shutdown end");
+                LOGGER.info("Shutdown end");
             }
         });
     }

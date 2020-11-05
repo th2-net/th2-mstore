@@ -13,19 +13,23 @@
 
 package com.exactpro.th2.mstore;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.stream.Stream;
 
 import org.jetbrains.annotations.NotNull;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.messages.MessageToStore;
+import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageBatch;
+import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
 
-public class MessageBatchStore extends AbstractMessageStore<MessageBatch> {
+public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.PARSED)
             .map(QueueAttribute::toString)
             .toArray(String[]::new);
@@ -35,19 +39,34 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch> {
     }
 
     @Override
+    protected MessageToStore convert(Message originalMessage) {
+        return ProtoUtil.toCradleMessage(originalMessage);
+    }
+
+    @Override
+    protected void store(CradleManager cradleManager, StoredMessageBatch storedMessageBatch) throws IOException {
+        cradleManager.getStorage().storeProcessedMessageBatch(storedMessageBatch);
+    }
+
+    @Override
+    protected long extractSequences(Message message) {
+        return message.getMetadata().getId().getSequence();
+    }
+
+    @Override
+    protected SessionKey createSessionKey(Message message) {
+        MessageID messageID = message.getMetadata().getId();
+        return new SessionKey(messageID.getConnectionId().getSessionAlias(), ProtoUtil.toCradleDirection(messageID.getDirection()));
+    }
+
+    @Override
     protected String[] getAttributes() {
         return ATTRIBUTES;
     }
 
     @Override
-    public void handle(MessageBatch batch) {
-        try {
-            List<Message> messagesList = batch.getMessagesList();
-            storeMessages(messagesList, ProtoUtil::toCradleMessage, getCradleManager().getStorage()::storeProcessedMessageBatch);
-        } catch (Exception e) {
-            logger.error("Cannot store parsed message batch:  '{}'", batch, e);
-        }
+    protected List<Message> getMessages(MessageBatch delivery) {
+        return delivery.getMessagesList();
     }
-
 
 }

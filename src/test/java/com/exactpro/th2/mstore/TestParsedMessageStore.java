@@ -22,6 +22,7 @@ import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageBatch;
 import com.exactpro.th2.common.grpc.MessageMetadata;
 import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.Timestamp;
 
 public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, Message> {
@@ -30,8 +31,9 @@ public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, M
     }
 
     @Override
-    protected AbstractMessageStore<MessageBatch, Message> createStore(CradleManager cradleManagerMock, MessageRouter<MessageBatch> routerMock) {
-        return new MessageBatchStore(routerMock, cradleManagerMock);
+    protected AbstractMessageStore<MessageBatch, Message> createStore(CradleManager cradleManagerMock, MessageRouter<MessageBatch> routerMock,
+                                                                      MessageStoreConfiguration configuration) {
+        return new MessageBatchStore(routerMock, cradleManagerMock, configuration);
     }
 
     @Override

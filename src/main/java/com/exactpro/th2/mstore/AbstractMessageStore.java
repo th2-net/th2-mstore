@@ -20,7 +20,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
@@ -34,13 +37,53 @@ import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.exactpro.th2.store.common.AbstractStorage;
 
 public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
-    private final Map<SessionKey, AtomicLong> sessionToLastSequence = new ConcurrentHashMap<>();
+    private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final Map<SessionKey, SessionBatchHolder> sessionToHolder = new ConcurrentHashMap<>();
+    private final MessageStoreConfiguration configuration;
+    private volatile ScheduledFuture<?> future;
 
-    public AbstractMessageStore(MessageRouter<T> router, @NotNull CradleManager cradleManager) {
+    public AbstractMessageStore(
+            MessageRouter<T> router,
+            @NotNull CradleManager cradleManager,
+            @NotNull MessageStoreConfiguration configuration
+    ) {
         super(router, cradleManager);
+        this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
+    }
+
+    @Override
+    public void start() {
+        super.start();
+        future = drainExecutor.scheduleAtFixedRate(this::drain, configuration.getDrainInterval(), configuration.getDrainInterval(), TimeUnit.MILLISECONDS);
+        logger.info("Drain scheduler is started");
+    }
+
+    @Override
+    public void dispose() {
+        super.dispose();
+        try {
+            ScheduledFuture<?> future = this.future;
+            if (future != null) {
+                this.future = null;
+                future.cancel(false);
+            }
+        } catch (Exception ex) {
+            logger.error("Cannot cancel drain task", ex);
+        }
+
+        try {
+            drainExecutor.shutdown();
+            drainExecutor.awaitTermination(configuration.getTerminationTimeout(), TimeUnit.MILLISECONDS);
+        } catch (Exception ex) {
+            logger.error("Cannot gracefully shutdown drain executor", ex);
+            if (ex instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     @Override
@@ -56,19 +99,19 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
             long firstSequence = extractSequence(messages.get(0));
             long lastSequence = extractSequence(lastMessage);
             SessionKey sessionKey = createSessionKey(lastMessage);
-            AtomicLong lastSeqHolder = sessionToLastSequence.computeIfAbsent(sessionKey, ignore -> new AtomicLong(Long.MIN_VALUE));
-            long prevLastSeq = lastSeqHolder.getAndAccumulate(lastSequence, Math::max);
+            SessionBatchHolder holder = sessionToHolder.computeIfAbsent(sessionKey, ignore -> new SessionBatchHolder());
+            long prevLastSeq = holder.getAndUpdateSequence(lastSequence);
             if (prevLastSeq >= firstSequence) {
                 logger.error("Duplicated delivery found: {}", delivery);
                 return;
             }
-            storeMessages(messages);
+            storeMessages(messages, holder);
         } catch (Exception ex) {
             logger.error("Cannot handle delivery of type {}", delivery.getClass(), ex);
         }
     }
 
-    protected void storeMessages(List<M> messagesList) throws CradleStorageException, IOException {
+    protected void storeMessages(List<M> messagesList, SessionBatchHolder holder) throws CradleStorageException, IOException {
         logger.debug("Process {} messages started, max {}", messagesList.size(), MAX_MESSAGES_COUNT);
 
         StoredMessageBatch storedMessageBatch = new StoredMessageBatch();
@@ -76,10 +119,23 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
             MessageToStore messageToStore = convert(message);
             storedMessageBatch.addMessage(messageToStore);
         }
-        store(getCradleManager(), storedMessageBatch);
-        logger.debug("Message Batch stored: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
-                storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(),
-                storedMessageBatch.getMessageCount(), storedMessageBatch.getMessages());
+        if (holder.add(storedMessageBatch)) {
+            logger.debug("Message Batch added to the holder: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
+                    storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(),
+                    storedMessageBatch.getMessageCount(), storedMessageBatch.getMessages());
+        } else {
+            StoredMessageBatch batch = holder.reset();
+            if (batch.isEmpty()) {
+                logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing",
+                        storedMessageBatch.getStreamName(), storedMessageBatch.getDirection());
+            } else {
+                store(getCradleManager(), batch);
+                logger.debug("Message Batch stored: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
+                        batch.getStreamName(), batch.getId().getDirection(), batch.getId().getIndex(),
+                        batch.getMessageCount(), batch.getMessages());
+            }
+            holder.add(storedMessageBatch);
+        }
     }
 
     /**
@@ -126,6 +182,26 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
                             messageIndex - 1, lastKey, messageIndex, sessionKey
                     )
             );
+        }
+    }
+
+    private void drain() {
+        logger.debug("Start storing batches by scheduler");
+        sessionToHolder.forEach(this::drainHolder);
+        logger.debug("Stop storing batches by scheduler");
+    }
+
+    private void drainHolder(SessionKey key, SessionBatchHolder holder) {
+        StoredMessageBatch batch = holder.reset();
+        if (batch.isEmpty()) {
+            logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing by scheduler",
+                    key.getStreamName(), key.getDirection());
+            return;
+        }
+        try {
+            store(getCradleManager(), batch);
+        } catch (Exception ex) {
+            logger.error("Cannot store batch for session {}", key, ex);
         }
     }
 

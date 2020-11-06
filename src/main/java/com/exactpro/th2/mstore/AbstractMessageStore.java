@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
@@ -36,7 +37,7 @@ import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.store.common.AbstractStorage;
 
 public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
-    private final Map<SessionKey, Long> sessionToLastSequence = new ConcurrentHashMap<>();
+    private final Map<SessionKey, AtomicLong> sessionToLastSequence = new ConcurrentHashMap<>();
 
     public AbstractMessageStore(MessageRouter<T> router, @NotNull CradleManager cradleManager) {
         super(router, cradleManager);
@@ -52,10 +53,12 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
                 return;
             }
             M lastMessage = messages.get(messages.size() - 1);
-            long lastSequences = extractSequences(lastMessage);
+            long firstSequence = extractSequence(messages.get(0));
+            long lastSequence = extractSequence(lastMessage);
             SessionKey sessionKey = createSessionKey(lastMessage);
-            long mergedSequence = sessionToLastSequence.merge(sessionKey, lastSequences, Math::max);
-            if (mergedSequence != lastSequences) {
+            AtomicLong lastSeqHolder = sessionToLastSequence.computeIfAbsent(sessionKey, ignore -> new AtomicLong(Long.MIN_VALUE));
+            long prevLastSeq = lastSeqHolder.getAndAccumulate(lastSequence, Math::max);
+            if (prevLastSeq >= firstSequence) {
                 logger.error("Duplicated delivery found: {}", delivery);
                 return;
             }
@@ -93,11 +96,11 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
             SessionKey sessionKey = createSessionKey(message);
             if (lastKey == null) {
                 lastKey = sessionKey;
-                continue;
+            } else {
+                verifySession(i, lastKey, sessionKey);
             }
-            verifySession(i, lastKey, sessionKey);
 
-            long currentSeq = extractSequences(message);
+            long currentSeq = extractSequence(message);
             verifySequence(i, lastSeq, currentSeq);
             lastSeq = currentSeq;
         }
@@ -132,7 +135,7 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
 
     protected abstract void store(CradleManager cradleManager, StoredMessageBatch storedMessageBatch) throws IOException;
 
-    protected abstract long extractSequences(M message);
+    protected abstract long extractSequence(M message);
 
     protected abstract SessionKey createSessionKey(M message);
 

@@ -51,7 +51,7 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
     }
 
     @Override
-    protected long extractSequences(RawMessage message) {
+    protected long extractSequence(RawMessage message) {
         return message.getMetadata().getId().getSequence();
     }
 

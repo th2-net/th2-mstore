@@ -64,6 +64,9 @@ dependencies {
     implementation 'com.google.protobuf:protobuf-java-util'
 
     implementation "org.jetbrains:annotations:20.0.0"
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.4.2'
+    testImplementation 'org.mockito:mockito-junit-jupiter:3.6.0'
 }
 
 test {

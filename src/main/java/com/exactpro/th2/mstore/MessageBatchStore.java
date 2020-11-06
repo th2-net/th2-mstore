@@ -49,7 +49,7 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     }
 
     @Override
-    protected long extractSequences(Message message) {
+    protected long extractSequence(Message message) {
         return message.getMetadata().getId().getSequence();
     }
 

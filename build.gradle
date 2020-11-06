@@ -52,14 +52,11 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:2.1.+')
+    api platform('com.exactpro.th2:bom:2.2.+')
 
     implementation 'com.exactpro.th2:common'
     implementation 'com.exactpro.th2:grpc-common'
     implementation 'com.exactpro.th2:store-common'
-
-    implementation 'com.exactpro.cradle:cradle-cassandra'
-    implementation 'com.exactpro.cradle:cradle-core'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 

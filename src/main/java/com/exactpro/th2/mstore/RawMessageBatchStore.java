@@ -13,19 +13,25 @@
 
 package com.exactpro.th2.mstore;
 
+import static com.exactpro.th2.store.common.utils.ProtoUtil.toCradleDirection;
+
+import java.io.IOException;
 import java.util.List;
 import java.util.stream.Stream;
 
 import org.jetbrains.annotations.NotNull;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.messages.MessageToStore;
+import com.exactpro.cradle.messages.StoredMessageBatch;
+import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
 
-public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch> {
+public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, RawMessage> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.RAW)
             .map(QueueAttribute::toString)
             .toArray(String[]::new);
@@ -35,19 +41,34 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch> 
     }
 
     @Override
+    protected MessageToStore convert(RawMessage originalMessage) {
+        return ProtoUtil.toCradleMessage(originalMessage);
+    }
+
+    @Override
+    protected void store(CradleManager cradleManager, StoredMessageBatch storedMessageBatch) throws IOException {
+        cradleManager.getStorage().storeMessageBatch(storedMessageBatch);
+    }
+
+    @Override
+    protected long extractSequence(RawMessage message) {
+        return message.getMetadata().getId().getSequence();
+    }
+
+    @Override
+    protected SessionKey createSessionKey(RawMessage message) {
+        MessageID messageID = message.getMetadata().getId();
+        return new SessionKey(messageID.getConnectionId().getSessionAlias(), toCradleDirection(messageID.getDirection()));
+    }
+
+    @Override
     protected String[] getAttributes() {
         return ATTRIBUTES;
     }
 
     @Override
-    public void handle(RawMessageBatch batch) {
-        try {
-            List<RawMessage> messagesList = batch.getMessagesList();
-            storeMessages(messagesList, ProtoUtil::toCradleMessage, getCradleManager().getStorage()::storeMessageBatch);
-        } catch (Exception e) {
-            logger.error("Can not store raw message batch: '{}'", batch, e);
-        }
+    protected List<RawMessage> getMessages(RawMessageBatch delivery) {
+        return delivery.getMessagesList();
     }
-
 
 }

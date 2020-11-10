@@ -20,13 +20,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
@@ -119,10 +120,10 @@ abstract class TestCaseMessageStore<T, M> {
         return createDelivery(List.of(messages));
     }
 
-    private void assertStoredMessageBatch(StoredMessageBatch batch, String streamName, Direction direction, int seq) {
+    private void assertStoredMessageBatch(StoredMessageBatch batch, String streamName, Direction direction, int count) {
         assertEquals(ProtoUtil.toCradleDirection(direction), batch.getDirection());
         assertEquals(streamName, batch.getStreamName());
-        assertEquals(seq, batch.getMessageCount());
+        assertEquals(count, batch.getMessageCount());
     }
 
     @Nested
@@ -245,6 +246,51 @@ abstract class TestCaseMessageStore<T, M> {
             StoredMessageBatch value = capture.getValue();
             assertNotNull(value);
             assertStoredMessageBatch(value, "test", Direction.FIRST, 2);
+        }
+    }
+
+    @Nested
+    @DisplayName("Several deliveries for one session")
+    class TestSeveralDeliveriesInOneSession {
+        @Test
+        @DisplayName("Delivery for the same session ara joined to one batch")
+        void joinsBatches() throws IOException {
+            M first = createMessage("test", Direction.FIRST, 1);
+            M second = createMessage("test", Direction.FIRST, 2);
+
+            messageStore.handle(deliveryOf(first));
+            messageStore.handle(deliveryOf(second));
+
+            ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
+
+            StoredMessageBatch value = capture.getValue();
+            assertNotNull(value);
+            assertStoredMessageBatch(value, "test", Direction.FIRST, 2);
+        }
+
+        @Test
+        @DisplayName("Stores batch if cannot join because of messages count")
+        void storesBatch() throws IOException {
+            List<M> firstDelivery = IntStream.range(0, StoredMessageBatch.MAX_MESSAGES_COUNT / 2)
+                    .mapToObj(it -> createMessage("test", Direction.FIRST, it))
+                    .collect(Collectors.toList());
+
+            List<M> secondDelivery = IntStream.range(StoredMessageBatch.MAX_MESSAGES_COUNT / 2, StoredMessageBatch.MAX_MESSAGES_COUNT + 1)
+                    .mapToObj(it -> createMessage("test", Direction.FIRST, it))
+                    .collect(Collectors.toList());
+
+            messageStore.handle(createDelivery(firstDelivery));
+            messageStore.handle(createDelivery(secondDelivery));
+
+            ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(2)), capture.capture());
+
+            List<StoredMessageBatch> value = capture.getAllValues();
+            assertNotNull(value);
+            assertEquals(2, value.size());
+            assertStoredMessageBatch(value.get(0), "test", Direction.FIRST, firstDelivery.size());
+            assertStoredMessageBatch(value.get(1), "test", Direction.FIRST, secondDelivery.size());
         }
     }
 

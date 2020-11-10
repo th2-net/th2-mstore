@@ -58,7 +58,7 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
     @Override
     public void start() {
         super.start();
-        future = drainExecutor.scheduleAtFixedRate(this::drain, configuration.getDrainInterval(), configuration.getDrainInterval(), TimeUnit.MILLISECONDS);
+        future = drainExecutor.scheduleAtFixedRate(this::drainByScheduler, configuration.getDrainInterval(), configuration.getDrainInterval(), TimeUnit.MILLISECONDS);
         logger.info("Drain scheduler is started");
     }
 
@@ -73,6 +73,12 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
             }
         } catch (Exception ex) {
             logger.error("Cannot cancel drain task", ex);
+        }
+
+        try {
+            drain();
+        } catch (Exception ex) {
+            logger.error("Cannot drain left batches during shutdown", ex);
         }
 
         try {
@@ -185,10 +191,14 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
         }
     }
 
-    private void drain() {
+    private void drainByScheduler() {
         logger.debug("Start storing batches by scheduler");
-        sessionToHolder.forEach(this::drainHolder);
+        drain();
         logger.debug("Stop storing batches by scheduler");
+    }
+
+    private void drain() {
+        sessionToHolder.forEach(this::drainHolder);
     }
 
     private void drainHolder(SessionKey key, SessionBatchHolder holder) {

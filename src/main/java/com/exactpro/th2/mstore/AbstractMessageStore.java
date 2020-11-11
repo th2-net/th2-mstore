@@ -76,14 +76,20 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
         }
 
         try {
-            drain();
+            drain(true);
         } catch (Exception ex) {
             logger.error("Cannot drain left batches during shutdown", ex);
         }
 
         try {
             drainExecutor.shutdown();
-            drainExecutor.awaitTermination(configuration.getTerminationTimeout(), TimeUnit.MILLISECONDS);
+            if (!drainExecutor.awaitTermination(configuration.getTerminationTimeout(), TimeUnit.MILLISECONDS)) {
+                logger.warn("Drain executor was not terminated during {} millis. Call force shutdown", configuration.getTerminationTimeout());
+                List<Runnable> leftTasks = drainExecutor.shutdownNow();
+                if (!leftTasks.isEmpty()) {
+                    logger.warn("{} tasks left in the queue", leftTasks.size());
+                }
+            }
         } catch (Exception ex) {
             logger.error("Cannot gracefully shutdown drain executor", ex);
             if (ex instanceof InterruptedException) {
@@ -130,17 +136,16 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
                     storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(),
                     storedMessageBatch.getMessageCount(), storedMessageBatch.getMessages());
         } else {
-            StoredMessageBatch batch = holder.reset();
-            if (batch.isEmpty()) {
+            StoredMessageBatch holtBatch = holder.resetAndUpdate(storedMessageBatch);
+            if (holtBatch.isEmpty()) {
                 logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing",
                         storedMessageBatch.getStreamName(), storedMessageBatch.getDirection());
             } else {
-                store(getCradleManager(), batch);
+                store(getCradleManager(), holtBatch);
                 logger.debug("Message Batch stored: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
-                        batch.getStreamName(), batch.getId().getDirection(), batch.getId().getIndex(),
-                        batch.getMessageCount(), batch.getMessages());
+                        holtBatch.getStreamName(), holtBatch.getId().getDirection(), holtBatch.getId().getIndex(),
+                        holtBatch.getMessageCount(), holtBatch.getMessages());
             }
-            holder.add(storedMessageBatch);
         }
     }
 
@@ -193,15 +198,19 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
 
     private void drainByScheduler() {
         logger.debug("Start storing batches by scheduler");
-        drain();
+        drain(false);
         logger.debug("Stop storing batches by scheduler");
     }
 
-    private void drain() {
-        sessionToHolder.forEach(this::drainHolder);
+    private void drain(boolean force) {
+        sessionToHolder.forEach((key, holder) -> drainHolder(key, holder, force));
     }
 
-    private void drainHolder(SessionKey key, SessionBatchHolder holder) {
+    private void drainHolder(SessionKey key, SessionBatchHolder holder, boolean force) {
+        logger.trace("Drain holder for session {}; force: {}", key, force);
+        if (!force && !holder.isReadyToReset(configuration.getDrainInterval())) {
+            return;
+        }
         StoredMessageBatch batch = holder.reset();
         if (batch.isEmpty()) {
             logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing by scheduler",

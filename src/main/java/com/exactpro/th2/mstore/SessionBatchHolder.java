@@ -13,9 +13,12 @@
 
 package com.exactpro.th2.mstore;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import javax.annotation.concurrent.GuardedBy;
 
@@ -23,9 +26,12 @@ import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.cradle.utils.CradleStorageException;
 
 public class SessionBatchHolder {
-    private final Lock lock = new ReentrantLock();
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     private final AtomicLong lastSequence = new AtomicLong(Long.MIN_VALUE);
+
+    @GuardedBy("lock")
+    private volatile Instant lastReset = Instant.now();
 
     @GuardedBy("lock")
     private volatile StoredMessageBatch holtBatch = new StoredMessageBatch();
@@ -35,22 +41,42 @@ public class SessionBatchHolder {
     }
 
     public boolean add(StoredMessageBatch batch) throws CradleStorageException {
-        lock.lock();
+        lock.writeLock().lock();
         try {
             return holtBatch.addBatch(batch);
         } finally {
-            lock.unlock();
+            lock.writeLock().unlock();
+        }
+    }
+
+    public boolean isReadyToReset(long maxMillisWithoutReset) {
+        lock.readLock().lock();
+        try {
+            return Math.abs(Duration.between(lastReset, Instant.now()).toMillis()) > maxMillisWithoutReset && !holtBatch.isEmpty();
+        } finally {
+            lock.readLock().unlock();
         }
     }
 
     public StoredMessageBatch reset() {
-        lock.lock();
+        return internalReset(new StoredMessageBatch());
+    }
+
+    public StoredMessageBatch resetAndUpdate(StoredMessageBatch batch) {
+        Objects.requireNonNull(batch, "'Batch' parameter");
+        return internalReset(batch);
+    }
+
+    private StoredMessageBatch internalReset(StoredMessageBatch newValue) {
+        lock.writeLock().lock();
         try {
             StoredMessageBatch currentBatch = holtBatch;
-            holtBatch = new StoredMessageBatch();
+            holtBatch = newValue;
+            lastReset = Instant.now();
+
             return currentBatch;
         } finally {
-            lock.unlock();
+            lock.writeLock().unlock();
         }
     }
 }

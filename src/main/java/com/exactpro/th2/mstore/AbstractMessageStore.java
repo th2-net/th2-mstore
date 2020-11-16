@@ -131,21 +131,25 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
             MessageToStore messageToStore = convert(message);
             storedMessageBatch.addMessage(messageToStore);
         }
-        if (holder.add(storedMessageBatch)) {
-            logger.debug("Message Batch added to the holder: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
-                    storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(),
-                    storedMessageBatch.getMessageCount(), storedMessageBatch.getMessages());
-        } else {
-            StoredMessageBatch holtBatch = holder.resetAndUpdate(storedMessageBatch);
-            if (holtBatch.isEmpty()) {
-                logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing",
-                        storedMessageBatch.getStreamName(), storedMessageBatch.getDirection());
-            } else {
-                store(getCradleManager(), holtBatch);
-                logger.debug("Message Batch stored: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
-                        holtBatch.getStreamName(), holtBatch.getId().getDirection(), holtBatch.getId().getIndex(),
-                        holtBatch.getMessageCount(), holtBatch.getMessages());
+        StoredMessageBatch holtBatch;
+        synchronized (holder) {
+            if (holder.add(storedMessageBatch)) {
+                logger.debug("Message Batch added to the holder: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
+                        storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(),
+                        storedMessageBatch.getMessageCount(), storedMessageBatch.getMessages());
+                return;
             }
+            holtBatch = holder.resetAndUpdate(storedMessageBatch);
+        }
+
+        if (holtBatch.isEmpty()) {
+            logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing",
+                    storedMessageBatch.getStreamName(), storedMessageBatch.getDirection());
+        } else {
+            store(getCradleManager(), holtBatch);
+            logger.debug("Message Batch stored: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
+                    holtBatch.getStreamName(), holtBatch.getId().getDirection(), holtBatch.getId().getIndex(),
+                    holtBatch.getMessageCount(), holtBatch.getMessages());
         }
     }
 
@@ -208,10 +212,13 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
 
     private void drainHolder(SessionKey key, SessionBatchHolder holder, boolean force) {
         logger.trace("Drain holder for session {}; force: {}", key, force);
-        if (!force && !holder.isReadyToReset(configuration.getDrainInterval())) {
-            return;
+        StoredMessageBatch batch;
+        synchronized (holder) {
+            if (!force && !holder.isReadyToReset(configuration.getDrainInterval())) {
+                return;
+            }
+            batch = holder.reset();
         }
-        StoredMessageBatch batch = holder.reset();
         if (batch.isEmpty()) {
             logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing by scheduler",
                     key.getStreamName(), key.getDirection());

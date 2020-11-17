@@ -23,12 +23,8 @@ repositories {
     }
     mavenCentral()
     maven {
-        name 'Artifactory snapshot'
-        url 'http://artifactory5.exp.exactpro.com/artifactory/libs-snapshot'
-    }
-    maven {
-        name 'Artifactory release'
-        url 'http://artifactory5.exp.exactpro.com/artifactory/libs-release'
+        name 'Bintray'
+        url 'https://dl.bintray.com/exactpro/th2'
     }
 
     configurations.all {
@@ -52,14 +48,14 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:2.1.+')
+    api platform('com.exactpro.th2:bom:2.4.+')
 
     implementation 'com.exactpro.th2:common'
     implementation 'com.exactpro.th2:grpc-common'
     implementation 'com.exactpro.th2:store-common'
 
-    implementation 'com.exactpro.cradle:cradle-cassandra'
-    implementation 'com.exactpro.cradle:cradle-core'
+    implementation 'com.exactpro.th2:cradle-cassandra'
+    implementation 'com.exactpro.th2:cradle-core'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 

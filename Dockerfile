@@ -1,7 +1,6 @@
 FROM gradle:6.6-jdk11 AS build
-ARG release_version
 COPY ./ .
-RUN gradle test dockerPrepare -Prelease_version=${release_version}
+RUN gradle --no-daemon test dockerPrepare
 
 FROM openjdk:12-alpine
 WORKDIR /home

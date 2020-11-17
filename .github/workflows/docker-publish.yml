@@ -26,9 +26,16 @@ jobs:
       with:
         path: ./gradle.properties
         property: release_version
+    - name: Read project name from settings.gradle
+      id: read_name
+      uses: christian-draeger/read-properties@1.0.1
+      with:
+        path: ./settings.gradle
+        property: settings.gradle
     - name: Build and push
       id: docker_build
       uses: docker/build-push-action@v2
       with:
         push: true
         tags: ghcr.io/${{ github.repository }}:${{ steps.read_property.outputs.value }}
+        labels: com.exactpro.th2.th2-${{ steps.read_name.outputs.value }}.version=${{ steps.read_property.outputs.value }}

@@ -16,3 +16,29 @@ session alias, direction and sequence number are a compound unique identifier of
 # Custom resources for infra-mgr
 
 Infra schema can only contain one mstore box description. It consists of one required option - docker image . Pin configuration is generated and managed by infra-operator.
+
+
+### Quick start
+General view of the component will look like this:
+```yaml
+apiVersion: th2.exactpro.com/v1
+kind: Th2Mstore
+metadata:
+  name: mstore
+spec:
+  image-name: ghcr.io/th2-net/th2-mstore
+  image-version: <image version>
+  extended-settings:
+    service:
+      enabled: false
+    envVariables:
+      JAVA_TOOL_OPTIONS: "-XX:+ExitOnOutOfMemoryError -Ddatastax-java-driver.advanced.connection.init-query-timeout=\"5000 milliseconds\""
+    resources:
+      limits:
+        memory: 500Mi
+        cpu: 200m
+      requests:
+        memory: 100Mi
+        cpu: 20m
+
+```

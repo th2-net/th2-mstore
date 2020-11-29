@@ -17,7 +17,8 @@ session alias, direction and sequence number are a compound unique identifier of
 
 Infra schema can only contain one mstore box description. It consists of one required option - docker image . Pin configuration is generated and managed by infra-operator.
 
-Example of a finished box
+### Quick start
+General view of the component will look like this:
 ```yaml
 apiVersion: th2.exactpro.com/v1
 kind: Th2Mstore

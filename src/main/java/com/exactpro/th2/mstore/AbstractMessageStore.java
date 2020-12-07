@@ -15,12 +15,19 @@ package com.exactpro.th2.mstore;
 
 import static com.exactpro.cradle.messages.StoredMessageBatch.MAX_MESSAGES_COUNT;
 
-import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
@@ -31,13 +38,16 @@ import org.jetbrains.annotations.NotNull;
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.Direction;
 import com.exactpro.cradle.messages.MessageToStore;
+import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.messages.StoredMessageBatch;
+import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.store.common.AbstractStorage;
 
 public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
     private final Map<SessionKey, AtomicLong> sessionToLastSequence = new ConcurrentHashMap<>();
+    private final Map<CompletableFuture<Void>, StoredMessageBatch> asyncStoreFutures = new ConcurrentHashMap<>();
 
     public AbstractMessageStore(MessageRouter<T> router, @NotNull CradleManager cradleManager) {
         super(router, cradleManager);
@@ -68,7 +78,43 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
         }
     }
 
-    protected void storeMessages(List<M> messagesList) throws CradleStorageException, IOException {
+    @Override
+    public void dispose() {
+        super.dispose();
+
+        Set<CompletableFuture<Void>> futuresToRemove = new HashSet<>();
+        while (!(asyncStoreFutures.isEmpty() || Thread.currentThread().isInterrupted())) {
+            logger.info("Wait for the completion of {} futures", asyncStoreFutures.size());
+            futuresToRemove.clear();
+            asyncStoreFutures.forEach((future, batch) -> {
+                try {
+                    if (!future.isCancelled()) {
+                        future.get(1, TimeUnit.SECONDS);
+                    }
+                    futuresToRemove.add(future);
+                } catch (InterruptedException e) {
+                    logger.error(e.getMessage(), e);
+                    Thread.currentThread().interrupt();
+                } catch (CancellationException e) {
+                    if (logger.isWarnEnabled()) {
+                        logger.warn("{} - future related to {} batch is cancelled", getClass().getPackageName(), formatStoredMessageBatch(batch, false), e);
+                    }
+                } catch (ExecutionException e) {
+                    if (logger.isWarnEnabled()) {
+                        logger.warn("{} - storing {} batch is failure", getClass().getPackageName(), formatStoredMessageBatch(batch, false), e);
+                    }
+                } catch (TimeoutException e) {
+                    if (logger.isErrorEnabled()) {
+                        logger.error("{} - future related to {} batch can't be complited", getClass().getPackageName(), formatStoredMessageBatch(batch, false), e);
+                    }
+                    future.cancel(false);
+                }
+            });
+            asyncStoreFutures.keySet().removeAll(futuresToRemove);
+        }
+    }
+
+    protected void storeMessages(List<M> messagesList) throws CradleStorageException {
         logger.debug("Process {} messages started, max {}", messagesList.size(), MAX_MESSAGES_COUNT);
 
         StoredMessageBatch storedMessageBatch = new StoredMessageBatch();
@@ -76,10 +122,43 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
             MessageToStore messageToStore = convert(message);
             storedMessageBatch.addMessage(messageToStore);
         }
-        store(getCradleManager(), storedMessageBatch);
-        logger.debug("Message Batch stored: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
-                storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(),
-                storedMessageBatch.getMessageCount(), storedMessageBatch.getMessages());
+        CompletableFuture<Void> future = store(storedMessageBatch);
+        asyncStoreFutures.put(future, storedMessageBatch);
+        future.whenCompleteAsync((value, exception) -> {
+            try {
+                if (exception == null) {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("{} - batch stored: {}", getClass().getPackageName(), formatStoredMessageBatch(storedMessageBatch, true));
+                    }
+                } else {
+                    if (logger.isErrorEnabled()) {
+                        logger.error("{} - batch storing is failure: {}", getClass().getPackageName(), formatStoredMessageBatch(storedMessageBatch, true));
+                    }
+                }
+            } finally {
+                if(asyncStoreFutures.remove(future) == null) {
+                    if (logger.isWarnEnabled()) {
+                        logger.warn("{} - future related to batch {} already removed", getClass().getPackageName(), formatStoredMessageBatch(storedMessageBatch, true));
+                    }
+                }
+            }
+        });
+    }
+
+    private String formatStoredMessageBatch(StoredMessageBatch storedMessageBatch, boolean full) {
+        ToStringBuilder builder = new ToStringBuilder(storedMessageBatch)
+                .append("stream", storedMessageBatch.getStreamName())
+                .append("direction", storedMessageBatch.getId().getDirection())
+                .append("batch id", storedMessageBatch.getId().getIndex());
+        if (full) {
+            builder.append("size", storedMessageBatch.getMessageCount())
+                    .append("message sequences", storedMessageBatch.getMessages().stream()
+                            .map(StoredMessage::getId)
+                            .map(StoredMessageId::getIndex)
+                            .map(Objects::toString)
+                            .collect(Collectors.joining(",", "[", "]")));
+        }
+        return builder.toString();
     }
 
     /**
@@ -133,16 +212,11 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
 
     protected abstract MessageToStore convert(M originalMessage);
 
-    protected abstract void store(CradleManager cradleManager, StoredMessageBatch storedMessageBatch) throws IOException;
+    protected abstract CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch);
 
     protected abstract long extractSequence(M message);
 
     protected abstract SessionKey createSessionKey(M message);
-
-    @FunctionalInterface
-    protected interface CradleStoredMessageBatchFunction {
-        void store(StoredMessageBatch storedMessageBatch) throws IOException;
-    }
 
     protected static class SessionKey {
         private final String streamName;

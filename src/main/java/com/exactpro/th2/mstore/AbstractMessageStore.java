@@ -73,7 +73,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             AtomicLong lastSeqHolder = sessionToLastSequence.computeIfAbsent(sessionKey, ignore -> new AtomicLong(Long.MIN_VALUE));
             long prevLastSeq = lastSeqHolder.getAndAccumulate(lastSequence, Math::max);
             if (prevLastSeq >= firstSequence) {
-                logger.error("Duplicated delivery found: {}", messageBatch);
+                logger.error("Duplicated batch found: {}", messageBatch);
                 return;
             }
             storeMessages(messages);

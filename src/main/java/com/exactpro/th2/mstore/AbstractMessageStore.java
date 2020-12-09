@@ -78,7 +78,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             }
             storeMessages(messages);
         } catch (Exception ex) {
-            logger.error("Cannot handle delivery of type {}", messageBatch.getClass(), ex);
+            logger.error("Cannot handle the batch of type {}", messageBatch.getClass(), ex);
         }
     }
 

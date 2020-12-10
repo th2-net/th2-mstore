@@ -6,7 +6,8 @@ plugins {
 }
 
 ext {
-    sharedDir                   = file("${project.rootDir}/shared")
+    sharedDir       = file("${project.rootDir}/shared")
+    cradleVersion   = '2.4.0'
 }
 
 group = 'com.exactpro.th2'
@@ -48,14 +49,14 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:2.4.+')
+    api platform('com.exactpro.th2:bom:2.9.1')
 
-    implementation 'com.exactpro.th2:common'
-    implementation 'com.exactpro.th2:grpc-common'
-    implementation 'com.exactpro.th2:store-common'
+    implementation 'com.exactpro.th2:common:2.7.0'
+    implementation 'com.exactpro.th2:grpc-common:2.3.2'
+    implementation 'com.exactpro.th2:store-common:2.7.0'
 
-    implementation 'com.exactpro.th2:cradle-cassandra'
-    implementation 'com.exactpro.th2:cradle-core'
+    implementation "com.exactpro.th2:cradle-cassandra:${cradleVersion}"
+    implementation "com.exactpro.th2:cradle-core:${cradleVersion}"
 
     implementation 'com.google.protobuf:protobuf-java-util'
 

@@ -15,6 +15,7 @@ package com.exactpro.th2.mstore;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
 import org.jetbrains.annotations.NotNull;
@@ -44,8 +45,8 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     }
 
     @Override
-    protected void store(CradleManager cradleManager, StoredMessageBatch storedMessageBatch) throws IOException {
-        cradleManager.getStorage().storeProcessedMessageBatch(storedMessageBatch);
+    protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch) {
+        return cradleStorage.storeMessageBatchAsync(storedMessageBatch);
     }
 
     @Override

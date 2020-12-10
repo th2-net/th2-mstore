@@ -26,7 +26,7 @@ import com.google.protobuf.Timestamp;
 
 public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, RawMessage> {
     TestRawMessageStore() {
-        super(CradleStorage::storeMessageBatch);
+        super(CradleStorage::storeMessageBatchAsync);
     }
 
     @Override

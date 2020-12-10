@@ -46,7 +46,7 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
 
     @Override
     protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch) {
-        return cradleStorage.storeMessageBatchAsync(storedMessageBatch);
+        return cradleStorage.storeProcessedMessageBatchAsync(storedMessageBatch);
     }
 
     @Override

@@ -26,6 +26,10 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
@@ -42,10 +46,11 @@ import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
+import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.TimestampOrBuilder;
 
-abstract class TestCaseMessageStore<T, M> {
+abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
 
     private final CradleManager cradleManagerMock = mock(CradleManager.class);
 
@@ -56,6 +61,9 @@ abstract class TestCaseMessageStore<T, M> {
 
     private final CradleStoreFunction storeFunction;
 
+    @SuppressWarnings("unchecked")
+    private final CompletableFuture<Void> completableFuture = mock(CompletableFuture.class);
+
     private AbstractMessageStore<T, M> messageStore;
 
     protected TestCaseMessageStore(CradleStoreFunction storeFunction) {
@@ -64,6 +72,9 @@ abstract class TestCaseMessageStore<T, M> {
 
     @BeforeEach
     void setUp() {
+        when(storageMock.storeProcessedMessageBatchAsync(any(StoredMessageBatch.class))).thenReturn(completableFuture);
+        when(storageMock.storeMessageBatchAsync(any(StoredMessageBatch.class))).thenReturn(completableFuture);
+
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         messageStore = spy(createStore(cradleManagerMock, routerMock));
     }
@@ -218,7 +229,66 @@ abstract class TestCaseMessageStore<T, M> {
         assertStoredMessageBatch(value, "test", Direction.FIRST, 2);
     }
 
+    @Test
+    @DisplayName("Close message store when feature is complited")
+    void complitedFutureComplited() throws InterruptedException, ExecutionException, TimeoutException {
+        M first = createMessage("test", Direction.FIRST, 1);
+
+        messageStore.handle(deliveryOf(first));
+        messageStore.dispose();
+
+        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
+    }
+
+    @Test
+    @DisplayName("Close message store when feature throws TimeoutException")
+    void complitedFutureTimeoutException() throws InterruptedException, ExecutionException, TimeoutException {
+        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(TimeoutException.class);
+        when(completableFuture.isDone()).thenReturn(false, true);
+        when(completableFuture.cancel(any(boolean.class))).thenReturn(false);
+
+        M first = createMessage("test", Direction.FIRST, 1);
+
+        messageStore.handle(deliveryOf(first));
+        messageStore.dispose();
+
+        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
+        verify(completableFuture, times(2)).isDone();
+        verify(completableFuture).cancel(false);
+    }
+
+    @Test
+    @DisplayName("Close message store when feature throws InterruptedException")
+    void complitedFutureInterruptedException() throws InterruptedException, ExecutionException, TimeoutException {
+        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(InterruptedException.class);
+        when(completableFuture.isDone()).thenReturn(false, true);
+        when(completableFuture.cancel(any(boolean.class))).thenReturn(false);
+
+        M first = createMessage("test", Direction.FIRST, 1);
+
+        messageStore.handle(deliveryOf(first));
+        messageStore.dispose();
+
+        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
+        verify(completableFuture).isDone();
+        verify(completableFuture).cancel(true);
+    }
+
+    @Test
+    @DisplayName("Close message store when feature throws ExecutionException")
+    void complitedFutureExecutionException() throws InterruptedException, ExecutionException, TimeoutException {
+        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(ExecutionException.class);
+
+        M first = createMessage("test", Direction.FIRST, 1);
+
+        messageStore.handle(deliveryOf(first));
+        messageStore.dispose();
+
+        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
+        verify(completableFuture).isDone();
+    }
+
     protected interface CradleStoreFunction {
-        void store(CradleStorage storage, StoredMessageBatch batch) throws IOException;
+        CompletableFuture<Void> store(CradleStorage storage, StoredMessageBatch batch);
     }
 }

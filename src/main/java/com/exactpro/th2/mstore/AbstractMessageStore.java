@@ -93,26 +93,25 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             futuresToRemove.clear();
             asyncStoreFutures.forEach((future, batch) -> {
                 try {
-                    if (!future.isCancelled()) {
+                    if (!future.isDone()) {
                         future.get(1, TimeUnit.SECONDS);
                     }
                     futuresToRemove.add(future);
-                } catch (InterruptedException e) {
-                    logger.error(e.getMessage(), e);
-                    Thread.currentThread().interrupt();
-                } catch (CancellationException e) {
-                    if (logger.isWarnEnabled()) {
-                        logger.warn("{} - future related to {} batch is cancelled", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
-                    }
-                } catch (ExecutionException e) {
+                } catch (CancellationException | ExecutionException e) {
                     if (logger.isWarnEnabled()) {
                         logger.warn("{} - storing {} batch is failure", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
                     }
-                } catch (TimeoutException e) {
+                    futuresToRemove.add(future);
+                } catch (TimeoutException | InterruptedException e) {
                     if (logger.isErrorEnabled()) {
                         logger.error("{} - future related to {} batch can't be complited", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
                     }
-                    future.cancel(false);
+                    boolean mayInterruptIfRunning = e instanceof InterruptedException;
+                    future.cancel(mayInterruptIfRunning);
+
+                    if (mayInterruptIfRunning) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
             });
             asyncStoreFutures.keySet().removeAll(futuresToRemove);

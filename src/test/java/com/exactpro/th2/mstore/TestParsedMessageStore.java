@@ -26,7 +26,7 @@ import com.google.protobuf.Timestamp;
 
 public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, Message> {
     TestParsedMessageStore() {
-        super(CradleStorage::storeProcessedMessageBatch);
+        super(CradleStorage::storeProcessedMessageBatchAsync);
     }
 
     @Override

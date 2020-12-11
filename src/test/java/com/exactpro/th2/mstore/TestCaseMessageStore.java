@@ -243,11 +243,9 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     @Test
     @DisplayName("Close message store when feature throws TimeoutException")
     void complitedFutureTimeoutException() throws InterruptedException, ExecutionException, TimeoutException {
-        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(mock(TimeoutException.class));
-        when(completableFuture.cancel(any(boolean.class))).thenAnswer((invocation) -> {
-            when(completableFuture.isDone()).thenReturn(true);
-            return false;
-        });
+        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(TimeoutException.class);
+        when(completableFuture.isDone()).thenReturn(false, true);
+        when(completableFuture.cancel(any(boolean.class))).thenReturn(false);
 
         M first = createMessage("test", Direction.FIRST, 1);
 
@@ -262,11 +260,9 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     @Test
     @DisplayName("Close message store when feature throws InterruptedException")
     void complitedFutureInterruptedException() throws InterruptedException, ExecutionException, TimeoutException {
-        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(mock(InterruptedException.class));
-        when(completableFuture.cancel(any(boolean.class))).thenAnswer((invocation) -> {
-            when(completableFuture.isDone()).thenReturn(true);
-            return false;
-        });
+        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(InterruptedException.class);
+        when(completableFuture.isDone()).thenReturn(false, true);
+        when(completableFuture.cancel(any(boolean.class))).thenReturn(false);
 
         M first = createMessage("test", Direction.FIRST, 1);
 
@@ -281,7 +277,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     @Test
     @DisplayName("Close message store when feature throws ExecutionException")
     void complitedFutureExecutionException() throws InterruptedException, ExecutionException, TimeoutException {
-        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(mock(ExecutionException.class));
+        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(ExecutionException.class);
 
         M first = createMessage("test", Direction.FIRST, 1);
 

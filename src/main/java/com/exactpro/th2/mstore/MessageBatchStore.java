@@ -13,7 +13,6 @@
 
 package com.exactpro.th2.mstore;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;

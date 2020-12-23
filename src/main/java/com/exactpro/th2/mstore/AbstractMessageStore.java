@@ -13,7 +13,6 @@
 
 package com.exactpro.th2.mstore;
 
-import static com.exactpro.cradle.messages.StoredMessageBatch.MAX_MESSAGES_COUNT;
 import static com.google.protobuf.TextFormat.shortDebugString;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
@@ -119,9 +118,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
     protected void storeMessages(List<M> messagesList) throws CradleStorageException {
-        logger.debug("Process {} messages started, max {}", messagesList.size(), MAX_MESSAGES_COUNT);
+        logger.debug("Process {} messages started", messagesList.size());
 
-        StoredMessageBatch storedMessageBatch = new StoredMessageBatch();
+        StoredMessageBatch storedMessageBatch = cradleStorage.getObjectsFactory().createMessageBatch();
         for (M message : messagesList) {
             MessageToStore messageToStore = convert(message);
             storedMessageBatch.addMessage(messageToStore);

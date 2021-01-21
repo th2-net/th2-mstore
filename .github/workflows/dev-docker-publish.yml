@@ -1,4 +1,4 @@
-name: Build and publish Docker distributions to Github Container Registry ghcr.io
+name: Dev build and publish Docker distributions to Github Container Registry ghcr.io
 
 on:
   push:
@@ -38,10 +38,10 @@ jobs:
         password: ${{ secrets.CR_PAT }}
     - run: echo "::set-output name=REPOSITORY_NAME::$(echo '${{ github.repository }}' | awk -F '/' '{print $2}')"
       id: meta
-    # - name: Build and push
-    #   id: docker_build
-    #   uses: docker/build-push-action@v2
-    #   with:
-    #     push: true
-    #     tags: ghcr.io/${{ github.repository }}:${{ steps.release_ver.outputs.value }}
-    #     labels: com.exactpro.th2.${{ steps.meta.outputs.REPOSITORY_NAME }}=${{ steps.ver.outputs.value }}
+    - name: Build and push
+      id: docker_build
+      uses: docker/build-push-action@v2
+      with:
+        push: true
+        tags: ghcr.io/${{ github.repository }}:${{ steps.release_ver.outputs.value }}
+        labels: com.exactpro.th2.${{ steps.meta.outputs.REPOSITORY_NAME }}=${{ steps.ver.outputs.value }}

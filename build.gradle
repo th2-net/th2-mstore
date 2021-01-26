@@ -49,9 +49,9 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:2.9.1')
+    api platform('com.exactpro.th2:bom:2.10.1')
 
-    implementation 'com.exactpro.th2:common:2.8.0'
+    implementation 'com.exactpro.th2:common:2.9.0'
     implementation 'com.exactpro.th2:grpc-common:2.3.2'
     implementation 'com.exactpro.th2:store-common:2.7.0'
 
@@ -60,7 +60,7 @@ dependencies {
 
     implementation 'com.google.protobuf:protobuf-java-util'
 
-    implementation "org.jetbrains:annotations:20.0.0"
+    implementation "org.jetbrains:annotations"
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.4.2'
     testImplementation 'org.mockito:mockito-junit-jupiter:3.6.0'

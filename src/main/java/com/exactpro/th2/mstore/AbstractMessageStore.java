@@ -30,7 +30,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.builder.EqualsBuilder;
@@ -108,6 +107,10 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             }
         }
 
+        awaitFutures();
+    }
+
+    private void awaitFutures() {
         logger.debug("Waiting for futures completion");
         Collection<CompletableFuture<Void>> futuresToRemove = new HashSet<>();
         while (!(asyncStoreFutures.isEmpty() || Thread.currentThread().isInterrupted())) {
@@ -155,10 +158,11 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             long firstSequence = extractSequence(messages.get(0));
             long lastSequence = extractSequence(lastMessage);
             SessionKey sessionKey = createSessionKey(lastMessage);
-            SessionBatchHolder holder = sessionToHolder.computeIfAbsent(sessionKey, ignore -> new SessionBatchHolder());
+            SessionBatchHolder holder = sessionToHolder.computeIfAbsent(sessionKey, ignore ->
+                    new SessionBatchHolder(cradleStorage.getObjectsFactory()::createMessageBatch));
             long prevLastSeq = holder.getAndUpdateSequence(lastSequence);
             if (prevLastSeq >= firstSequence) {
-                logger.error("Duplicated batch found: {}", messageBatch);
+                logger.error("Duplicated batch found: {}", shortDebugString(messageBatch));
                 return;
             }
             storeMessages(messages, holder);
@@ -178,9 +182,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         StoredMessageBatch holtBatch;
         synchronized (holder) {
             if (holder.add(storedMessageBatch)) {
-                logger.debug("Message Batch added to the holder: stream '{}', direction '{}', id '{}', size '{}', messages '{}'",
-                        storedMessageBatch.getStreamName(), storedMessageBatch.getId().getDirection(), storedMessageBatch.getId().getIndex(),
-                        storedMessageBatch.getMessageCount(), storedMessageBatch.getMessages());
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Message Batch added to the holder: {}", formatStoredMessageBatch(storedMessageBatch, true));
+                }
                 return;
             }
             holtBatch = holder.resetAndUpdate(storedMessageBatch);
@@ -190,28 +194,32 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing",
                     storedMessageBatch.getStreamName(), storedMessageBatch.getDirection());
         } else {
-            CompletableFuture<Void> future = store(holtBatch);
-            asyncStoreFutures.put(future, holtBatch);
-            future.whenCompleteAsync((value, exception) -> {
-                try {
-                    if (exception == null) {
-                        if (logger.isDebugEnabled()) {
-                            logger.debug("{} - batch stored: {}", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true));
-                        }
-                    } else {
-                        if (logger.isErrorEnabled()) {
-                            logger.error("{} - batch storing is failure: {}", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true), exception);
-                        }
+            storeBatchAsync(holtBatch);
+        }
+    }
+
+    private void storeBatchAsync(StoredMessageBatch holtBatch) {
+        CompletableFuture<Void> future = store(holtBatch);
+        asyncStoreFutures.put(future, holtBatch);
+        future.whenCompleteAsync((value, exception) -> {
+            try {
+                if (exception == null) {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("{} - batch stored: {}", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true));
                     }
-                } finally {
-                    if(asyncStoreFutures.remove(future) == null) {
-                        if (logger.isWarnEnabled()) {
-                            logger.warn("{} - future related to batch {} already removed", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true));
-                        }
+                } else {
+                    if (logger.isErrorEnabled()) {
+                        logger.error("{} - batch storing is failure: {}", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true), exception);
                     }
                 }
-            });
-        }
+            } finally {
+                if (asyncStoreFutures.remove(future) == null) {
+                    if (logger.isWarnEnabled()) {
+                        logger.warn("{} - future related to batch {} already removed", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true));
+                    }
+                }
+            }
+        });
     }
 
     private static String formatStoredMessageBatch(StoredMessageBatch storedMessageBatch, boolean full) {
@@ -220,7 +228,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                 .append("direction", storedMessageBatch.getId().getDirection())
                 .append("batch id", storedMessageBatch.getId().getIndex());
         if (full) {
-            builder.append("size", storedMessageBatch.getMessageCount())
+            builder.append("size", storedMessageBatch.getBatchSize())
+                    .append("count", storedMessageBatch.getMessageCount())
                     .append("message sequences", storedMessageBatch.getMessages().stream()
                             .map(StoredMessage::getId)
                             .map(StoredMessageId::getIndex)
@@ -302,27 +311,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             return;
         }
         try {
-            CompletableFuture<Void> future = store(batch);
-            asyncStoreFutures.put(future, batch);
-            future.whenCompleteAsync((value, exception) -> {
-                try {
-                    if (exception == null) {
-                        if (logger.isDebugEnabled()) {
-                            logger.debug("{} - batch stored: {}", getClass().getSimpleName(), formatStoredMessageBatch(batch, true));
-                        }
-                    } else {
-                        if (logger.isErrorEnabled()) {
-                            logger.error("{} - batch storing is failure: {}", getClass().getSimpleName(), formatStoredMessageBatch(batch, true), exception);
-                        }
-                    }
-                } finally {
-                    if(asyncStoreFutures.remove(future) == null) {
-                        if (logger.isWarnEnabled()) {
-                            logger.warn("{} - future related to batch {} already removed", getClass().getSimpleName(), formatStoredMessageBatch(batch, true));
-                        }
-                    }
-                }
-            });
+            storeBatchAsync(batch);
         } catch (Exception ex) {
             logger.error("Cannot store batch for session {}", key, ex);
         }

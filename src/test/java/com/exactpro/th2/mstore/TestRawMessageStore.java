@@ -49,6 +49,11 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
     }
 
     @Override
+    protected long extractSize(RawMessage message) {
+        return message.toByteArray().length;
+    }
+
+    @Override
     protected RawMessageBatch createDelivery(List<RawMessage> messages) {
         return RawMessageBatch.newBuilder()
                 .addAllMessages(messages)

@@ -50,6 +50,11 @@ public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, M
     }
 
     @Override
+    protected long extractSize(Message message) {
+        return message.toByteArray().length;
+    }
+
+    @Override
     protected MessageBatch createDelivery(List<Message> messages) {
         return MessageBatch.newBuilder()
                 .addAllMessages(messages)

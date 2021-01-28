@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -26,9 +27,16 @@ import com.exactpro.cradle.utils.CradleStorageException;
 public class SessionBatchHolder {
     private final AtomicLong lastSequence = new AtomicLong(Long.MIN_VALUE);
 
+    private final Supplier<StoredMessageBatch> batchSupplier;
+
     private volatile Instant lastReset = Instant.now();
 
-    private volatile StoredMessageBatch holtBatch = new StoredMessageBatch();
+    private volatile StoredMessageBatch holtBatch;
+
+    public SessionBatchHolder(Supplier<StoredMessageBatch> batchSupplier) {
+        this.batchSupplier = Objects.requireNonNull(batchSupplier, "'Batch supplier' parameter");
+        holtBatch = batchSupplier.get();
+    }
 
     public long getAndUpdateSequence(long newLastSeq) {
         return lastSequence.getAndAccumulate(newLastSeq, Math::max);
@@ -57,7 +65,7 @@ public class SessionBatchHolder {
 
     @NotNull
     public StoredMessageBatch reset() {
-        return internalReset(new StoredMessageBatch());
+        return internalReset(batchSupplier.get());
     }
 
     @NotNull

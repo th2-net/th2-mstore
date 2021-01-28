@@ -13,6 +13,8 @@
 
 package com.exactpro.th2.mstore;
 
+import static com.exactpro.cradle.cassandra.CassandraStorageSettings.DEFAULT_MAX_EVENT_BATCH_SIZE;
+import static com.exactpro.cradle.cassandra.CassandraStorageSettings.DEFAULT_MAX_MESSAGE_BATCH_SIZE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,6 +22,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,6 +31,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
@@ -38,6 +45,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.CradleObjectsFactory;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.cradle.utils.CradleStorageException;
@@ -48,18 +56,29 @@ import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
+import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.TimestampOrBuilder;
 
-abstract class TestCaseMessageStore<T, M> {
+abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
 
     private static final int DRAIN_TIMEOUT = 1000;
 
-    private CradleStorage storageMock;
+    private final CradleManager cradleManagerMock = mock(CradleManager.class);
+
+    private final CradleStorage storageMock = mock(CradleStorage.class);
+
+    @SuppressWarnings("unchecked")
+    private final MessageRouter<T> routerMock = (MessageRouter<T>)mock(MessageRouter.class);
 
     private final CradleStoreFunction storeFunction;
 
+    @SuppressWarnings("unchecked")
+    private final CompletableFuture<Void> completableFuture = mock(CompletableFuture.class);
+
     private AbstractMessageStore<T, M> messageStore;
+
+    private CradleObjectsFactory cradleObjectsFactory;
 
     protected TestCaseMessageStore(CradleStoreFunction storeFunction) {
         this.storeFunction = storeFunction;
@@ -67,10 +86,11 @@ abstract class TestCaseMessageStore<T, M> {
 
     @BeforeEach
     void setUp() {
-        CradleManager cradleManagerMock = mock(CradleManager.class);
-        storageMock = mock(CradleStorage.class);
-        //noinspection unchecked
-        MessageRouter<T> routerMock = (MessageRouter<T>)mock(MessageRouter.class);
+        cradleObjectsFactory = spy(new CradleObjectsFactory(DEFAULT_MAX_MESSAGE_BATCH_SIZE, DEFAULT_MAX_EVENT_BATCH_SIZE));
+
+        when(storageMock.getObjectsFactory()).thenReturn(cradleObjectsFactory);
+        when(storageMock.storeProcessedMessageBatchAsync(any(StoredMessageBatch.class))).thenReturn(completableFuture);
+        when(storageMock.storeMessageBatchAsync(any(StoredMessageBatch.class))).thenReturn(completableFuture);
 
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         when(routerMock.subscribeAll(any(), any())).thenReturn(mock(SubscriberMonitor.class));
@@ -110,7 +130,7 @@ abstract class TestCaseMessageStore<T, M> {
                 .build();
     }
 
-    private Instant from(TimestampOrBuilder timestamp) {
+    private static Instant from(TimestampOrBuilder timestamp) {
         return Instant.ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos());
     }
 
@@ -120,7 +140,7 @@ abstract class TestCaseMessageStore<T, M> {
         return createDelivery(List.of(messages));
     }
 
-    private void assertStoredMessageBatch(StoredMessageBatch batch, String streamName, Direction direction, int count) {
+    private static void assertStoredMessageBatch(StoredMessageBatch batch, String streamName, Direction direction, int count) {
         assertEquals(ProtoUtil.toCradleDirection(direction), batch.getDirection());
         assertEquals(streamName, batch.getStreamName());
         assertEquals(count, batch.getMessageCount());
@@ -132,14 +152,14 @@ abstract class TestCaseMessageStore<T, M> {
 
         @Test
         @DisplayName("Empty delivery is not stored")
-        void emptyDelivery() throws IOException, CradleStorageException {
+        void testEmptyDelivery() throws CradleStorageException {
             messageStore.handle(deliveryOf());
             verify(messageStore, never()).storeMessages(any(), any());
         }
 
         @Test
         @DisplayName("Delivery with unordered sequences is not stored")
-        void unorderedDelivery() throws IOException, CradleStorageException {
+        void testUnorderedDelivery() throws CradleStorageException {
             M first = createMessage("test", Direction.FIRST, 1);
             M second = createMessage("test", Direction.FIRST, 2);
 
@@ -149,7 +169,7 @@ abstract class TestCaseMessageStore<T, M> {
 
         @Test
         @DisplayName("Delivery with different aliases is not stored")
-        void differentAliases() throws CradleStorageException, IOException {
+        void testDifferentAliases() throws CradleStorageException {
             M first = createMessage("testA", Direction.FIRST, 1);
             M second = createMessage("testB", Direction.FIRST, 2);
 
@@ -159,7 +179,7 @@ abstract class TestCaseMessageStore<T, M> {
 
         @Test
         @DisplayName("Delivery with different directions is not stored")
-        void differentDirections() throws CradleStorageException, IOException {
+        void testDifferentDirections() throws CradleStorageException {
             M first = createMessage("test", Direction.FIRST, 1);
             M second = createMessage("test", Direction.SECOND, 2);
 
@@ -169,7 +189,7 @@ abstract class TestCaseMessageStore<T, M> {
 
         @Test
         @DisplayName("Duplicated delivery is ignored")
-        void duplicatedDelivery() throws IOException {
+        void testDuplicatedDelivery() {
             M first = createMessage("test", Direction.FIRST, 1);
             messageStore.handle(deliveryOf(first));
 
@@ -178,6 +198,7 @@ abstract class TestCaseMessageStore<T, M> {
 
             ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
             storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
+        verify(cradleObjectsFactory, times(1)).createMessageBatch();
 
             StoredMessageBatch value = capture.getValue();
             assertNotNull(value);
@@ -192,7 +213,7 @@ abstract class TestCaseMessageStore<T, M> {
 
         @Test
         @DisplayName("Different sessions can have the same sequence")
-        void differentDirectionDelivery() throws IOException {
+        void testDifferentDirectionDelivery() {
             M first = createMessage("testA", Direction.FIRST, 1);
             messageStore.handle(deliveryOf(first));
 
@@ -201,6 +222,7 @@ abstract class TestCaseMessageStore<T, M> {
 
             ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
             storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(2)), capture.capture());
+        verify(cradleObjectsFactory, times(2)).createMessageBatch();
 
             List<StoredMessageBatch> value = capture.getAllValues();
             assertNotNull(value);
@@ -219,13 +241,14 @@ abstract class TestCaseMessageStore<T, M> {
 
         @Test
         @DisplayName("Delivery with single message is stored normally")
-        void singleMessageDelivery() throws IOException {
+        void testSingleMessageDelivery() {
             M first = createMessage("test", Direction.FIRST, 1);
 
             messageStore.handle(deliveryOf(first));
 
             ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
             storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
+            verify(cradleObjectsFactory, times(1)).createMessageBatch();
 
             StoredMessageBatch value = capture.getValue();
             assertNotNull(value);
@@ -234,7 +257,7 @@ abstract class TestCaseMessageStore<T, M> {
 
         @Test
         @DisplayName("Delivery with ordered messages for one session are stored")
-        void normalDelivery() throws IOException {
+        void testNormalDelivery() {
             M first = createMessage("test", Direction.FIRST, 1);
             M second = createMessage("test", Direction.FIRST, 2);
 
@@ -242,6 +265,7 @@ abstract class TestCaseMessageStore<T, M> {
 
             ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
             storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
+            verify(cradleObjectsFactory, times(1)).createMessageBatch();
 
             StoredMessageBatch value = capture.getValue();
             assertNotNull(value);
@@ -294,7 +318,66 @@ abstract class TestCaseMessageStore<T, M> {
         }
     }
 
+    @Test
+    @DisplayName("Close message store when feature is complited")
+    void testComplitedFutureComplited() throws InterruptedException, ExecutionException, TimeoutException {
+        M first = createMessage("test", Direction.FIRST, 1);
+
+        messageStore.handle(deliveryOf(first));
+        messageStore.dispose();
+
+        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
+    }
+
+    @Test
+    @DisplayName("Close message store when feature throws TimeoutException")
+    void testComplitedFutureTimeoutException() throws InterruptedException, ExecutionException, TimeoutException {
+        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(TimeoutException.class);
+        when(completableFuture.isDone()).thenReturn(false, true);
+        when(completableFuture.cancel(any(boolean.class))).thenReturn(false);
+
+        M first = createMessage("test", Direction.FIRST, 1);
+
+        messageStore.handle(deliveryOf(first));
+        messageStore.dispose();
+
+        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
+        verify(completableFuture, times(2)).isDone();
+        verify(completableFuture).cancel(false);
+    }
+
+    @Test
+    @DisplayName("Close message store when feature throws InterruptedException")
+    void testComplitedFutureInterruptedException() throws InterruptedException, ExecutionException, TimeoutException {
+        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(InterruptedException.class);
+        when(completableFuture.isDone()).thenReturn(false, true);
+        when(completableFuture.cancel(any(boolean.class))).thenReturn(false);
+
+        M first = createMessage("test", Direction.FIRST, 1);
+
+        messageStore.handle(deliveryOf(first));
+        messageStore.dispose();
+
+        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
+        verify(completableFuture).isDone();
+        verify(completableFuture).cancel(true);
+    }
+
+    @Test
+    @DisplayName("Close message store when feature throws ExecutionException")
+    void testComplitedFutureExecutionException() throws InterruptedException, ExecutionException, TimeoutException {
+        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(ExecutionException.class);
+
+        M first = createMessage("test", Direction.FIRST, 1);
+
+        messageStore.handle(deliveryOf(first));
+        messageStore.dispose();
+
+        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
+        verify(completableFuture).isDone();
+    }
+
     protected interface CradleStoreFunction {
-        void store(CradleStorage storage, StoredMessageBatch batch) throws IOException;
+        CompletableFuture<Void> store(CradleStorage storage, StoredMessageBatch batch);
     }
 }

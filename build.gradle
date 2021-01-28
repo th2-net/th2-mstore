@@ -6,7 +6,8 @@ plugins {
 }
 
 ext {
-    sharedDir                   = file("${project.rootDir}/shared")
+    sharedDir       = file("${project.rootDir}/shared")
+    cradleVersion   = '2.6.1'
 }
 
 group = 'com.exactpro.th2'
@@ -23,12 +24,8 @@ repositories {
     }
     mavenCentral()
     maven {
-        name 'Artifactory snapshot'
-        url 'http://artifactory5.exp.exactpro.com/artifactory/libs-snapshot'
-    }
-    maven {
-        name 'Artifactory release'
-        url 'http://artifactory5.exp.exactpro.com/artifactory/libs-release'
+        name 'Bintray'
+        url 'https://dl.bintray.com/exactpro/th2'
     }
 
     configurations.all {
@@ -52,15 +49,18 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:2.2.+')
+    api platform('com.exactpro.th2:bom:2.10.1')
 
-    implementation 'com.exactpro.th2:common'
-    implementation 'com.exactpro.th2:grpc-common'
-    implementation 'com.exactpro.th2:store-common'
+    implementation 'com.exactpro.th2:common:2.9.0'
+    implementation 'com.exactpro.th2:grpc-common:2.3.2'
+    implementation 'com.exactpro.th2:store-common:2.7.0'
+
+    implementation "com.exactpro.th2:cradle-cassandra:${cradleVersion}"
+    implementation "com.exactpro.th2:cradle-core:${cradleVersion}"
 
     implementation 'com.google.protobuf:protobuf-java-util'
 
-    implementation "org.jetbrains:annotations:20.0.0"
+    implementation "org.jetbrains:annotations"
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.4.2'
     testImplementation 'org.mockito:mockito-junit-jupiter:3.6.0'

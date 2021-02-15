@@ -11,7 +11,7 @@ Every raw message contains important parts:
 * sequence number - incremental identifier.
 * data - byte representation of raw message 
 
-session alias, direction and sequence number are a compound unique identifier of raw messages within th2
+session alias, direction and sequence number are a **compound unique identifier** of raw messages within th2
 
 # Configuration
 
@@ -26,7 +26,7 @@ session alias, direction and sequence number are a compound unique identifier of
 Interval in milliseconds to drain all aggregated batches that are not stored yet. The default value is 1000.
 
 #### termination-timeout
-The timeout in milliseconds to await the inner drain scheduler has finished all tasks. The default value is 5000.
+The timeout in milliseconds to await for the inner drain scheduler to finish all the tasks. The default value is 5000.
 
 # Custom resources for infra-mgr
 

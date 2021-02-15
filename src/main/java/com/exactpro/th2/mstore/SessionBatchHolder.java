@@ -43,10 +43,11 @@ public class SessionBatchHolder {
     }
 
     /**
-     * Tries to add the batch with messages to store to the currently holt batch.
-     * If batch can be added because of size or quantity limitations returns without changing the currently holt batch.
+     * Tries to add the batch with messages to the currently holt batch.
+     * If the batch can be added because of its size or quantity limitations,
+     * the method returns {@code false} without any changes being applied to the currently holt batch.
      * @param batch new batch to add to the currently holt one
-     * @return {@code true} if batch successfully added to currently holt one. Otherwise, returns {@code false}
+     * @return {@code true} if the batch is successfully added to currently holt one. Otherwise, returns {@code false}
      * @throws CradleStorageException if batch doesn't meet requirements for adding to the currently holt one
      */
     public boolean add(StoredMessageBatch batch) throws CradleStorageException {
@@ -54,7 +55,7 @@ public class SessionBatchHolder {
     }
 
     /**
-     * Checks if batch is ready to be reset based on max expected time in waiting and its size.
+     * Checks if the batch is ready to be reset based on max expected time in waiting and its size.
      * @param maxMillisWithoutReset time in milliseconds that must past since the last holder modification
      *                             (creation or last call of {@link #reset} or {@link #resetAndUpdate})
      * @return {@code true} if the holder was modified {@code maxMillisWithoutReset} millis ago and it is not empty

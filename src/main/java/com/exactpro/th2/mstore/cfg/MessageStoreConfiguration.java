@@ -25,7 +25,7 @@ public class MessageStoreConfiguration {
     private long drainInterval = DEFAULT_DRAIN_INTERVAL;
 
     @JsonProperty("termination-timeout")
-    @JsonPropertyDescription("The timeout in milliseconds to await the inner drain scheduler has finished all tasks")
+    @JsonPropertyDescription("The timeout in milliseconds to await for the inner drain scheduler to finish all the tasks")
     private long terminationTimeout = DEFAULT_WAIT_TIMEOUT;
 
     public long getDrainInterval() {

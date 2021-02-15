@@ -30,6 +30,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.builder.EqualsBuilder;
@@ -51,7 +53,7 @@ import com.google.protobuf.GeneratedMessageV3;
 
 public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> extends AbstractStorage<T> {
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final Map<SessionKey, SessionBatchHolder> sessionToHolder = new ConcurrentHashMap<>();
+    private final Map<SessionKey, SessionData> sessionToHolder = new ConcurrentHashMap<>();
     private final MessageStoreConfiguration configuration;
     private final Map<CompletableFuture<Void>, StoredMessageBatch> asyncStoreFutures = new ConcurrentHashMap<>();
     private volatile ScheduledFuture<?> future;
@@ -158,14 +160,14 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             long firstSequence = extractSequence(messages.get(0));
             long lastSequence = extractSequence(lastMessage);
             SessionKey sessionKey = createSessionKey(lastMessage);
-            SessionBatchHolder holder = sessionToHolder.computeIfAbsent(sessionKey, ignore ->
-                    new SessionBatchHolder(cradleStorage.getObjectsFactory()::createMessageBatch));
-            long prevLastSeq = holder.getAndUpdateSequence(lastSequence);
+            SessionData sessionData = sessionToHolder.computeIfAbsent(sessionKey, ignore ->
+                    new SessionData(cradleStorage.getObjectsFactory()::createMessageBatch));
+            long prevLastSeq = sessionData.getAndUpdateSequence(lastSequence);
             if (prevLastSeq >= firstSequence) {
                 logger.error("Duplicated batch found: {}", shortDebugString(messageBatch));
                 return;
             }
-            storeMessages(messages, holder);
+            storeMessages(messages, sessionData.getBatchHolder());
         } catch (Exception ex) {
             logger.error("Cannot handle the batch of type {}", messageBatch.getClass(), ex);
         }
@@ -293,7 +295,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
     private void drain(boolean force) {
-        sessionToHolder.forEach((key, holder) -> drainHolder(key, holder, force));
+        sessionToHolder.forEach((key, sessionData) -> drainHolder(key, sessionData.getBatchHolder(), force));
     }
 
     private void drainHolder(SessionKey key, SessionBatchHolder holder, boolean force) {
@@ -376,6 +378,24 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     .append("streamName", streamName)
                     .append("direction", direction)
                     .toString();
+        }
+    }
+
+    private static class SessionData {
+        private final AtomicLong lastSequence = new AtomicLong(Long.MIN_VALUE);
+
+        private final SessionBatchHolder batchHolder;
+
+        SessionData(Supplier<StoredMessageBatch> batchSupplier) {
+            batchHolder = new SessionBatchHolder(Objects.requireNonNull(batchSupplier, "'batchSupplier' cannot be null"));
+        }
+
+        public long getAndUpdateSequence(long newLastSeq) {
+            return lastSequence.getAndAccumulate(newLastSeq, Math::max);
+        }
+
+        public SessionBatchHolder getBatchHolder() {
+            return batchHolder;
         }
     }
 }

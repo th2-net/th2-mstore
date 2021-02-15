@@ -25,7 +25,6 @@ import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.cradle.utils.CradleStorageException;
 
 public class SessionBatchHolder {
-    private final AtomicLong lastSequence = new AtomicLong(Long.MIN_VALUE);
 
     private final Supplier<StoredMessageBatch> batchSupplier;
 
@@ -36,10 +35,6 @@ public class SessionBatchHolder {
     public SessionBatchHolder(Supplier<StoredMessageBatch> batchSupplier) {
         this.batchSupplier = Objects.requireNonNull(batchSupplier, "'Batch supplier' parameter");
         holtBatch = batchSupplier.get();
-    }
-
-    public long getAndUpdateSequence(long newLastSeq) {
-        return lastSequence.getAndAccumulate(newLastSeq, Math::max);
     }
 
     /**

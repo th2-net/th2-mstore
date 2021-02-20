@@ -21,20 +21,26 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
+import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.LongStream;
 
 import org.jetbrains.annotations.NotNull;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -47,12 +53,18 @@ import com.exactpro.th2.common.grpc.ConnectionID;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.SubscriberMonitor;
+import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.TimestampOrBuilder;
 
 abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
+
+    private static final int DRAIN_TIMEOUT = 1000;
+    private static final long TEST_MESSAGE_BATCH_SIZE = 1024;
+    private static final long TEST_EVENT_BATCH_SIZE = DEFAULT_MAX_EVENT_BATCH_SIZE;
 
     private final CradleManager cradleManagerMock = mock(CradleManager.class);
 
@@ -76,19 +88,30 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
     @BeforeEach
     void setUp() {
-        cradleObjectsFactory = spy(new CradleObjectsFactory(DEFAULT_MAX_MESSAGE_BATCH_SIZE, DEFAULT_MAX_EVENT_BATCH_SIZE));
+        cradleObjectsFactory = spy(new CradleObjectsFactory(TEST_MESSAGE_BATCH_SIZE, TEST_EVENT_BATCH_SIZE));
 
         when(storageMock.getObjectsFactory()).thenReturn(cradleObjectsFactory);
         when(storageMock.storeProcessedMessageBatchAsync(any(StoredMessageBatch.class))).thenReturn(completableFuture);
         when(storageMock.storeMessageBatchAsync(any(StoredMessageBatch.class))).thenReturn(completableFuture);
 
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
-        messageStore = spy(createStore(cradleManagerMock, routerMock));
+        when(routerMock.subscribeAll(any(), any())).thenReturn(mock(SubscriberMonitor.class));
+        MessageStoreConfiguration configuration = new MessageStoreConfiguration();
+        configuration.setDrainInterval(DRAIN_TIMEOUT / 10);
+        messageStore = spy(createStore(cradleManagerMock, routerMock, configuration));
+        messageStore.start();
     }
 
-    protected abstract AbstractMessageStore<T, M> createStore(CradleManager cradleManagerMock, MessageRouter<T> routerMock);
+    @AfterEach
+    void tearDown() {
+        messageStore.dispose();
+    }
+
+    protected abstract AbstractMessageStore<T, M> createStore(CradleManager cradleManagerMock, MessageRouter<T> routerMock, MessageStoreConfiguration configuration);
 
     protected abstract M createMessage(String session, Direction direction, long sequence);
+
+    protected abstract long extractSize(M message);
 
     protected abstract T createDelivery(List<M> messages);
 
@@ -121,123 +144,187 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         return createDelivery(List.of(messages));
     }
 
-    private static void assertStoredMessageBatch(StoredMessageBatch batch, String streamName, Direction direction, int seq) {
+    private static void assertStoredMessageBatch(StoredMessageBatch batch, String streamName, Direction direction, int count) {
         assertEquals(ProtoUtil.toCradleDirection(direction), batch.getDirection());
         assertEquals(streamName, batch.getStreamName());
-        assertEquals(seq, batch.getMessageCount());
+        assertEquals(count, batch.getMessageCount());
     }
 
-    @Test
-    @DisplayName("Empty delivery is not stored")
-    void testEmptyDelivery() throws CradleStorageException {
-        messageStore.handle(deliveryOf());
-        verify(messageStore, never()).storeMessages(any());
+    @Nested
+    @DisplayName("Incorrect delivery content")
+    class TestNegativeCases {
+
+        @Test
+        @DisplayName("Empty delivery is not stored")
+        void testEmptyDelivery() throws CradleStorageException {
+            messageStore.handle(deliveryOf());
+            verify(messageStore, never()).storeMessages(any(), any());
+        }
+
+        @Test
+        @DisplayName("Delivery with unordered sequences is not stored")
+        void testUnorderedDelivery() throws CradleStorageException {
+            M first = createMessage("test", Direction.FIRST, 1);
+            M second = createMessage("test", Direction.FIRST, 2);
+
+            messageStore.handle(deliveryOf(second, first));
+            verify(messageStore, never()).storeMessages(any(), any());
+        }
+
+        @Test
+        @DisplayName("Delivery with different aliases is not stored")
+        void testDifferentAliases() throws CradleStorageException {
+            M first = createMessage("testA", Direction.FIRST, 1);
+            M second = createMessage("testB", Direction.FIRST, 2);
+
+            messageStore.handle(deliveryOf(first, second));
+            verify(messageStore, never()).storeMessages(any(), any());
+        }
+
+        @Test
+        @DisplayName("Delivery with different directions is not stored")
+        void testDifferentDirections() throws CradleStorageException {
+            M first = createMessage("test", Direction.FIRST, 1);
+            M second = createMessage("test", Direction.SECOND, 2);
+
+            messageStore.handle(deliveryOf(first, second));
+            verify(messageStore, never()).storeMessages(any(), any());
+        }
+
+        @Test
+        @DisplayName("Duplicated delivery is ignored")
+        void testDuplicatedDelivery() {
+            M first = createMessage("test", Direction.FIRST, 1);
+            messageStore.handle(deliveryOf(first));
+
+            M duplicate = createMessage("test", Direction.FIRST, 1);
+            messageStore.handle(deliveryOf(duplicate));
+
+            ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
+            verify(cradleObjectsFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/)).createMessageBatch();
+
+            StoredMessageBatch value = capture.getValue();
+            assertNotNull(value);
+            assertStoredMessageBatch(value, "test", Direction.FIRST, 1);
+            assertEquals(from(extractTimestamp(first)), value.getLastTimestamp());
+        }
     }
 
-    @Test
-    @DisplayName("Delivery with unordered sequences is not stored")
-    void testUnorderedDelivery() throws CradleStorageException {
-        M first = createMessage("test", Direction.FIRST, 1);
-        M second = createMessage("test", Direction.FIRST, 2);
+    @Nested
+    @DisplayName("Handling single delivery")
+    class TestSingleDelivery {
 
-        messageStore.handle(deliveryOf(second, first));
-        verify(messageStore, never()).storeMessages(any());
+        @Test
+        @DisplayName("Different sessions can have the same sequence")
+        void testDifferentDirectionDelivery() {
+            M first = createMessage("testA", Direction.FIRST, 1);
+            messageStore.handle(deliveryOf(first));
+
+            M duplicate = createMessage("testB", Direction.SECOND, 1);
+            messageStore.handle(deliveryOf(duplicate));
+
+            ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(2)), capture.capture());
+            int invocations = 2 + 2/*two sessions*/ * 2 /*invocations in SessionBatchHolder (init + reset)*/;
+            verify(cradleObjectsFactory, times(invocations)).createMessageBatch();
+
+            List<StoredMessageBatch> value = capture.getAllValues();
+            assertNotNull(value);
+            assertEquals(2, value.size());
+
+            StoredMessageBatch firstValue = value.stream()
+                    .filter(it -> it.getDirection() == ProtoUtil.toCradleDirection(Direction.FIRST))
+                    .findFirst().orElseThrow();
+            assertStoredMessageBatch(firstValue, "testA", Direction.FIRST, 1);
+
+            StoredMessageBatch secondValue = value.stream()
+                    .filter(it -> it.getDirection() == ProtoUtil.toCradleDirection(Direction.SECOND))
+                    .findFirst().orElseThrow();
+            assertStoredMessageBatch(secondValue, "testB", Direction.SECOND, 1);
+        }
+
+        @Test
+        @DisplayName("Delivery with single message is stored normally")
+        void testSingleMessageDelivery() {
+            M first = createMessage("test", Direction.FIRST, 1);
+
+            messageStore.handle(deliveryOf(first));
+
+            ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
+            verify(cradleObjectsFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/)).createMessageBatch();
+
+            StoredMessageBatch value = capture.getValue();
+            assertNotNull(value);
+            assertStoredMessageBatch(value, "test", Direction.FIRST, 1);
+        }
+
+        @Test
+        @DisplayName("Delivery with ordered messages for one session are stored")
+        void testNormalDelivery() {
+            M first = createMessage("test", Direction.FIRST, 1);
+            M second = createMessage("test", Direction.FIRST, 2);
+
+            messageStore.handle(deliveryOf(first, second));
+
+            ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
+            verify(cradleObjectsFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/)).createMessageBatch();
+
+            StoredMessageBatch value = capture.getValue();
+            assertNotNull(value);
+            assertStoredMessageBatch(value, "test", Direction.FIRST, 2);
+        }
     }
 
-    @Test
-    @DisplayName("Delivery with different aliases is not stored")
-    void testDifferentAliases() throws CradleStorageException {
-        M first = createMessage("testA", Direction.FIRST, 1);
-        M second = createMessage("testB", Direction.FIRST, 2);
+    @Nested
+    @DisplayName("Several deliveries for one session")
+    class TestSeveralDeliveriesInOneSession {
+        @Test
+        @DisplayName("Delivery for the same session ara joined to one batch")
+        void joinsBatches() throws IOException {
+            M first = createMessage("test", Direction.FIRST, 1);
+            M second = createMessage("test", Direction.FIRST, 2);
 
-        messageStore.handle(deliveryOf(first, second));
-        verify(messageStore, never()).storeMessages(any());
-    }
+            messageStore.handle(deliveryOf(first));
+            messageStore.handle(deliveryOf(second));
 
-    @Test
-    @DisplayName("Delivery with different directions is not stored")
-    void testDifferentDirections() throws CradleStorageException {
-        M first = createMessage("test", Direction.FIRST, 1);
-        M second = createMessage("test", Direction.SECOND, 2);
+            ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
+            verify(cradleObjectsFactory, times(2 + 2/*invocations in SessionBatchHolder (init + reset)*/)).createMessageBatch();
 
-        messageStore.handle(deliveryOf(first, second));
-        verify(messageStore, never()).storeMessages(any());
-    }
+            StoredMessageBatch value = capture.getValue();
+            assertNotNull(value);
+            assertStoredMessageBatch(value, "test", Direction.FIRST, 2);
+        }
 
-    @Test
-    @DisplayName("Duplicated delivery is ignored")
-    void testDuplicatedDelivery() {
-        M first = createMessage("test", Direction.FIRST, 1);
-        messageStore.handle(deliveryOf(first));
+        @Test
+        @DisplayName("Stores batch if cannot join because of messages size")
+        void storesBatch() throws IOException {
+            long oneMessageSize = extractSize(createMessage("test", Direction.FIRST, 1));
+            long maxMessagesInBatchCount = TEST_MESSAGE_BATCH_SIZE / oneMessageSize;
+            List<M> firstDelivery = LongStream.range(0, maxMessagesInBatchCount / 2)
+                    .mapToObj(it -> createMessage("test", Direction.FIRST, it))
+                    .collect(Collectors.toList());
 
-        M duplicate = createMessage("test", Direction.FIRST, 1);
-        messageStore.handle(deliveryOf(duplicate));
+            List<M> secondDelivery = LongStream.range(maxMessagesInBatchCount / 2, maxMessagesInBatchCount + maxMessagesInBatchCount / 2)
+                    .mapToObj(it -> createMessage("test", Direction.FIRST, it))
+                    .collect(Collectors.toList());
 
-        ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
-        storeFunction.store(verify(storageMock, times(1)), capture.capture());
-        verify(cradleObjectsFactory, times(1)).createMessageBatch();
+            messageStore.handle(createDelivery(firstDelivery));
+            messageStore.handle(createDelivery(secondDelivery));
 
-        StoredMessageBatch value = capture.getValue();
-        assertNotNull(value);
-        assertStoredMessageBatch(value, "test", Direction.FIRST, 1);
-        assertEquals(from(extractTimestamp(first)), value.getLastTimestamp());
-    }
+            ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(2)), capture.capture());
+            verify(cradleObjectsFactory, times(2 + 2/*invocations in SessionBatchHolder (init + reset)*/)).createMessageBatch();
 
-    @Test
-    @DisplayName("Different sessions can have the same sequence")
-    void testDifferentDirectionDelivery() {
-        M first = createMessage("testA", Direction.FIRST, 1);
-        messageStore.handle(deliveryOf(first));
-
-        M duplicate = createMessage("testB", Direction.SECOND, 1);
-        messageStore.handle(deliveryOf(duplicate));
-
-        ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
-        storeFunction.store(verify(storageMock, times(2)), capture.capture());
-        verify(cradleObjectsFactory, times(2)).createMessageBatch();
-
-        List<StoredMessageBatch> value = capture.getAllValues();
-        assertNotNull(value);
-        assertEquals(2, value.size());
-
-        StoredMessageBatch firstValue = value.get(0);
-        assertStoredMessageBatch(firstValue, "testA", Direction.FIRST, 1);
-
-        StoredMessageBatch secondValue = value.get(1);
-        assertStoredMessageBatch(secondValue, "testB", Direction.SECOND, 1);
-    }
-
-    @Test
-    @DisplayName("Delivery with single message is stored normally")
-    void testSingleMessageDelivery() {
-        M first = createMessage("test", Direction.FIRST, 1);
-
-        messageStore.handle(deliveryOf(first));
-
-        ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
-        storeFunction.store(verify(storageMock, times(1)), capture.capture());
-        verify(cradleObjectsFactory, times(1)).createMessageBatch();
-
-        StoredMessageBatch value = capture.getValue();
-        assertNotNull(value);
-        assertStoredMessageBatch(value, "test", Direction.FIRST, 1);
-    }
-
-    @Test
-    @DisplayName("Delivery with ordered messages for one session are stored")
-    void testNormalDelivery() {
-        M first = createMessage("test", Direction.FIRST, 1);
-        M second = createMessage("test", Direction.FIRST, 2);
-
-        messageStore.handle(deliveryOf(first, second));
-
-        ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
-        storeFunction.store(verify(storageMock, times(1)), capture.capture());
-        verify(cradleObjectsFactory, times(1)).createMessageBatch();
-
-        StoredMessageBatch value = capture.getValue();
-        assertNotNull(value);
-        assertStoredMessageBatch(value, "test", Direction.FIRST, 2);
+            List<StoredMessageBatch> value = capture.getAllValues();
+            assertNotNull(value);
+            assertEquals(2, value.size());
+            assertStoredMessageBatch(value.get(0), "test", Direction.FIRST, firstDelivery.size());
+            assertStoredMessageBatch(value.get(1), "test", Direction.FIRST, secondDelivery.size());
+        }
     }
 
     @Test

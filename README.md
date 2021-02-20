@@ -11,12 +11,26 @@ Every raw message contains important parts:
 * sequence number - incremental identifier.
 * data - byte representation of raw message 
 
-session alias, direction and sequence number are a compound unique identifier of raw messages within th2
+session alias, direction and sequence number are a **compound unique identifier** of raw messages within th2
+
+# Configuration
+
+```json
+{
+  "drain-interval": 1000,
+  "termination-timeout": 5000
+}
+```
+
+#### drain-interval
+Interval in milliseconds to drain all aggregated batches that are not stored yet. The default value is 1000.
+
+#### termination-timeout
+The timeout in milliseconds to await for the inner drain scheduler to finish all the tasks. The default value is 5000.
 
 # Custom resources for infra-mgr
 
 Infra schema can only contain one mstore box description. It consists of one required option - docker image . Pin configuration is generated and managed by infra-operator.
-
 
 ### Quick start
 General view of the component will look like this:
@@ -28,6 +42,9 @@ metadata:
 spec:
   image-name: ghcr.io/th2-net/th2-mstore
   image-version: <image version>
+  custom-settings:
+    drain-interval: 1000
+    termination-timeout: 5000
   extended-settings:
     service:
       enabled: false

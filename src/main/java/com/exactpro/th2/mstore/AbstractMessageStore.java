@@ -13,8 +13,6 @@
 
 package com.exactpro.th2.mstore;
 
-import static com.exactpro.cradle.messages.StoredMessageBatch.MAX_MESSAGES_COUNT;
-
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -69,7 +67,7 @@ public abstract class AbstractMessageStore<T, M> extends AbstractStorage<T> {
     }
 
     protected void storeMessages(List<M> messagesList) throws CradleStorageException, IOException {
-        logger.debug("Process {} messages started, max {}", messagesList.size(), MAX_MESSAGES_COUNT);
+        logger.debug("Process {} messages started", messagesList.size());
 
         StoredMessageBatch storedMessageBatch = new StoredMessageBatch();
         for (M message : messagesList) {

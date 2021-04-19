@@ -1,4 +1,4 @@
-# Overview (2.5.0)
+# Overview (2.8.0)
 
 Message store (mstore) is an important th2 component responsible for storing raw messages into Cradle. Please refer to [Cradle repository] (https://github.com/th2-net/cradleapi/blob/master/README.md) for more details. This component has a pin for listening messages via MQ.
 
@@ -62,5 +62,11 @@ spec:
 # Common features
 
 This is a list of supported features provided by libraries.
-1. CradleMaxMessageBatchSize - this option defines the maximum message batch size in bytes.
-   Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats)
+Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
+
+## 2.8.0
++ timeout - the timeout for getting a response for Cradle operations;
++ pageSize - this option defines the size of the result set to fetch at a time.
+
+## 2.5.0
++ cradleMaxMessageBatchSize - this option defines the maximum message batch size in bytes.

@@ -13,8 +13,6 @@
 
 package com.exactpro.th2.mstore;
 
-import static com.exactpro.cradle.cassandra.CassandraStorageSettings.DEFAULT_MAX_EVENT_BATCH_SIZE;
-import static com.exactpro.cradle.cassandra.CassandraStorageSettings.DEFAULT_MAX_MESSAGE_BATCH_SIZE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -29,11 +27,11 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 import org.jetbrains.annotations.NotNull;
@@ -48,6 +46,7 @@ import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleObjectsFactory;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.messages.StoredMessageBatch;
+import com.exactpro.cradle.testevents.StoredTestEventBatch;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.ConnectionID;
 import com.exactpro.th2.common.grpc.Direction;
@@ -64,7 +63,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
     private static final int DRAIN_TIMEOUT = 1000;
     private static final long TEST_MESSAGE_BATCH_SIZE = 1024;
-    private static final long TEST_EVENT_BATCH_SIZE = DEFAULT_MAX_EVENT_BATCH_SIZE;
+    private static final long TEST_EVENT_BATCH_SIZE = StoredTestEventBatch.DEFAULT_MAX_BATCH_SIZE;
 
     private final CradleManager cradleManagerMock = mock(CradleManager.class);
 

@@ -66,3 +66,5 @@ Please see more details about this feature via [link](https://github.com/th2-net
 
 ## 3.1.0
 
++ Compressed metadata for events
++ Async API for storing messages

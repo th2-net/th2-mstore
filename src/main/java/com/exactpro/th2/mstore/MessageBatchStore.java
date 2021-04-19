@@ -27,6 +27,7 @@ import com.exactpro.th2.common.grpc.MessageBatch;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
+import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
 
 public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
@@ -34,8 +35,12 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
             .map(QueueAttribute::toString)
             .toArray(String[]::new);
 
-    public MessageBatchStore(MessageRouter<MessageBatch> router, @NotNull CradleManager cradleManager) {
-        super(router, cradleManager);
+    public MessageBatchStore(
+            MessageRouter<MessageBatch> router,
+            @NotNull CradleManager cradleManager,
+            @NotNull MessageStoreConfiguration configuration
+    ) {
+        super(router, cradleManager, configuration);
     }
 
     @Override

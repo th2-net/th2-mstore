@@ -28,6 +28,7 @@ import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
+import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 
 public class MessageStore {
 
@@ -37,10 +38,11 @@ public class MessageStore {
     private final RawMessageBatchStore rawStore;
     private final CradleManager cradleManager;
 
-    public MessageStore(AbstractCommonFactory factory) throws CradleStorageException {
+    public MessageStore(AbstractCommonFactory factory) {
         cradleManager = factory.getCradleManager();
-        parsedStore = new MessageBatchStore(factory.getMessageRouterParsedBatch(), cradleManager);
-        rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(), cradleManager);
+        MessageStoreConfiguration configuration = factory.getCustomConfiguration(MessageStoreConfiguration.class);
+        parsedStore = new MessageBatchStore(factory.getMessageRouterParsedBatch(), cradleManager, configuration);
+        rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(), cradleManager, configuration);
     }
 
     public void start() {

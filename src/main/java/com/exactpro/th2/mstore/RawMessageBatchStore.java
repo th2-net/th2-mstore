@@ -30,6 +30,7 @@ import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
+import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.exactpro.th2.store.common.utils.ProtoUtil;
 
 public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, RawMessage> {
@@ -37,8 +38,12 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
             .map(QueueAttribute::toString)
             .toArray(String[]::new);
 
-    public RawMessageBatchStore(MessageRouter<RawMessageBatch> router, @NotNull CradleManager cradleManager) {
-        super(router, cradleManager);
+    public RawMessageBatchStore(
+            MessageRouter<RawMessageBatch> router,
+            @NotNull CradleManager cradleManager,
+            @NotNull MessageStoreConfiguration configuration
+    ) {
+        super(router, cradleManager, configuration);
     }
 
     @Override

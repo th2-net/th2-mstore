@@ -21,16 +21,18 @@ repositories {
         name 'MavenLocal'
         url sharedDir
     }
+    
     mavenCentral()
-	maven {
-		name 'Sonatype_snapshots'
-		url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
-	}
 
-	maven {
-		name 'Sonatype_releases'
-		url 'https://s01.oss.sonatype.org/content/repositories/releases/'
-	}
+    maven {
+        name 'Sonatype_snapshots'
+        url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
+    }
+
+    maven {
+        name 'Sonatype_releases'
+        url 'https://s01.oss.sonatype.org/content/repositories/releases/'
+    }
 
     configurations.all {
         resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
@@ -41,13 +43,13 @@ repositories {
 jar {
     manifest {
         attributes(
-                'Created-By':               "${System.getProperty('java.version')} (${System.getProperty('java.vendor')})",
-                'Specification-Title':      '',
-                'Specification-Vendor':     'Exactpro Systems LLC',
-                'Implementation-Title':     project.archivesBaseName,
-                'Implementation-Vendor':    'Exactpro Systems LLC',
-                'Implementation-Vendor-Id': 'com.exactpro',
-                'Implementation-Version':   project.version
+            'Created-By':               "${System.getProperty('java.version')} (${System.getProperty('java.vendor')})",
+            'Specification-Title':      '',
+            'Specification-Vendor':     'Exactpro Systems LLC',
+            'Implementation-Title':     project.archivesBaseName,
+            'Implementation-Vendor':    'Exactpro Systems LLC',
+            'Implementation-Vendor-Id': 'com.exactpro',
+            'Implementation-Version':   project.version
         )
     }
 }
@@ -55,7 +57,7 @@ jar {
 dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
-    implementation 'com.exactpro.th2:common:2.17.1'
+    implementation 'com.exactpro.th2:common:2.17.2'
     implementation 'com.exactpro.th2:store-common:2.8.0'
 
     implementation 'com.google.protobuf:protobuf-java-util'

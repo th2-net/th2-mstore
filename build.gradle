@@ -21,10 +21,17 @@ repositories {
         name 'MavenLocal'
         url sharedDir
     }
+    
     mavenCentral()
+
     maven {
-        name 'Bintray'
-        url 'https://dl.bintray.com/exactpro/th2'
+        name 'Sonatype_snapshots'
+        url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
+    }
+
+    maven {
+        name 'Sonatype_releases'
+        url 'https://s01.oss.sonatype.org/content/repositories/releases/'
     }
 
     configurations.all {
@@ -36,22 +43,22 @@ repositories {
 jar {
     manifest {
         attributes(
-                'Created-By':               "${System.getProperty('java.version')} (${System.getProperty('java.vendor')})",
-                'Specification-Title':      '',
-                'Specification-Vendor':     'Exactpro Systems LLC',
-                'Implementation-Title':     project.archivesBaseName,
-                'Implementation-Vendor':    'Exactpro Systems LLC',
-                'Implementation-Vendor-Id': 'com.exactpro',
-                'Implementation-Version':   project.version
+            'Created-By':               "${System.getProperty('java.version')} (${System.getProperty('java.vendor')})",
+            'Specification-Title':      '',
+            'Specification-Vendor':     'Exactpro Systems LLC',
+            'Implementation-Title':     project.archivesBaseName,
+            'Implementation-Vendor':    'Exactpro Systems LLC',
+            'Implementation-Vendor-Id': 'com.exactpro',
+            'Implementation-Version':   project.version
         )
     }
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:2.10.1')
+    api platform('com.exactpro.th2:bom:3.0.0')
 
-    implementation 'com.exactpro.th2:common:2.16.0'
-    implementation 'com.exactpro.th2:store-common:2.7.0'
+    implementation 'com.exactpro.th2:common:2.17.2'
+    implementation 'com.exactpro.th2:store-common:2.8.0'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 

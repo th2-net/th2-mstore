@@ -34,6 +34,8 @@ repositories {
         url 'https://s01.oss.sonatype.org/content/repositories/releases/'
     }
 
+    mavenLocal()
+
     configurations.all {
         resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
         resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
@@ -58,7 +60,7 @@ dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
     implementation 'com.exactpro.th2:common:3.13.4'
-    implementation 'com.exactpro.th2:store-common:3.1.0'
+    implementation 'com.exactpro.th2:store-common:3.1.1'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 

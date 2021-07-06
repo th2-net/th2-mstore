@@ -19,6 +19,8 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 public class MessageStoreConfiguration {
     private static final long DEFAULT_DRAIN_INTERVAL = 1000L;
     private static final long DEFAULT_WAIT_TIMEOUT = 5000L;
+    private static final long DEFAULT_ASYNC_STORE_LIMIT = 1000L;
+    private static final long DEFAULT_LIMIT_EXCEEDED_TIMEOUT = 5000L;
 
     @JsonProperty("drain-interval")
     @JsonPropertyDescription("Interval in milliseconds to drain all aggregated batches that are not stored yet")
@@ -27,6 +29,12 @@ public class MessageStoreConfiguration {
     @JsonProperty("termination-timeout")
     @JsonPropertyDescription("The timeout in milliseconds to await for the inner drain scheduler to finish all the tasks")
     private long terminationTimeout = DEFAULT_WAIT_TIMEOUT;
+
+    @JsonProperty("async-store-limit")
+    private long asyncStoreLimit = DEFAULT_ASYNC_STORE_LIMIT;
+
+    @JsonProperty("limit-exceeded-timeout")
+    private long limitExceededTimeout = DEFAULT_LIMIT_EXCEEDED_TIMEOUT;
 
     public long getDrainInterval() {
         return drainInterval;
@@ -42,5 +50,21 @@ public class MessageStoreConfiguration {
 
     public void setTerminationTimeout(long terminationTimeout) {
         this.terminationTimeout = terminationTimeout;
+    }
+
+    public long getAsyncStoreLimit() {
+        return asyncStoreLimit;
+    }
+
+    public void setAsyncStoreLimit(long asyncStoreLimit) {
+        this.asyncStoreLimit = asyncStoreLimit;
+    }
+
+    public long getLimitExceededTimeout() {
+        return limitExceededTimeout;
+    }
+
+    public void setLimitExceededTimeout(long limitExceededTimeout) {
+        this.limitExceededTimeout = limitExceededTimeout;
     }
 }

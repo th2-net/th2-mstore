@@ -131,7 +131,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     futuresToRemove.add(future);
                 } catch (TimeoutException | InterruptedException e) {
                     if (logger.isErrorEnabled()) {
-                        logger.error("{} - future related to {} batch can't be complited", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
+                        logger.error("{} - future related to {} batch can't be completed", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
                     }
                     boolean mayInterruptIfRunning = e instanceof InterruptedException;
                     future.cancel(mayInterruptIfRunning);
@@ -146,7 +146,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
     @Override
-    public final void handle(T messageBatch) {
+    public final void handle(T messageBatch) throws InterruptedException {
+        checkAndAwaitIfLimitExceeded();
         try {
             verifyBatch(messageBatch);
             List<M> messages = getMessages(messageBatch);
@@ -197,6 +198,19 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     storedMessageBatch.getStreamName(), storedMessageBatch.getDirection());
         } else {
             storeBatchAsync(holtBatch);
+        }
+    }
+
+    private void checkAndAwaitIfLimitExceeded() throws InterruptedException {
+        long limit = configuration.getAsyncStoreLimit();
+        long limitExceededTimeout = configuration.getLimitExceededTimeout();
+        if (asyncStoreFutures.size() >= limit) {
+            logger.trace("Waiting for futures count is less than limit {}", limit);
+            while (asyncStoreFutures.size() >= limit) {
+                // Probably this is not the best way to do that
+                // But we currently don't have a better idea because we need to keep the order of messages
+                Thread.sleep(limitExceededTimeout);
+            }
         }
     }
 

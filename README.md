@@ -68,7 +68,10 @@ Please see more details about this feature via [link](https://github.com/th2-net
 
 ### Changed:
 
-+ Update common-j from `3.13.4` to `3.18.0`
++ Disable waiting for connection recovery when closing the `SubscribeMonitor`
++ Update Cradle version from `2.9.1` to `2.13.0`
++ Rework logging for incoming and outgoing messages
++ Resets embedded log4j configuration before configuring it from a file
 
 ## 3.1.0
 

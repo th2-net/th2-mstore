@@ -1,4 +1,4 @@
-# Overview (3.1.0)
+# Overview (3.3.0)
 
 Message store (mstore) is an important th2 component responsible for storing raw messages into Cradle. Please refer to [Cradle repository] (https://github.com/th2-net/cradleapi/blob/master/README.md) for more details. This component has a pin for listening messages via MQ.
 
@@ -63,6 +63,15 @@ spec:
 
 This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
+
+## 3.3.0
+
+### Changed:
+
++ Disable waiting for connection recovery when closing the `SubscribeMonitor`
++ Update Cradle version from `2.9.1` to `2.13.0`
++ Rework logging for incoming and outgoing messages
++ Resets embedded log4j configuration before configuring it from a file
 
 ## 3.1.0
 

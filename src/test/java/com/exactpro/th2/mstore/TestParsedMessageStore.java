@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2020 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -27,7 +27,7 @@ import com.google.protobuf.Timestamp;
 
 public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, Message> {
     TestParsedMessageStore() {
-        super(CradleStorage::storeProcessedMessageBatchAsync);
+        super(CradleStorage::storeMessageBatchAsync);
     }
 
     @Override
@@ -37,12 +37,12 @@ public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, M
     }
 
     @Override
-    protected Message createMessage(String session, Direction direction, long sequence) {
+    protected Message createMessage(String sessionAlias, Direction direction, long sequence) {
         return Message.newBuilder()
                 .setMetadata(
                         MessageMetadata.newBuilder()
                                 .setMessageType("A")
-                                .setId(createMessageId(session, direction, sequence))
+                                .setId(createMessageId(sessionAlias, direction, sequence, BOOK_NAME))
                                 .setTimestamp(createTimestamp())
                                 .build()
                 )

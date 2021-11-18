@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2020 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -25,7 +25,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.exactpro.cradle.CradleManager;
-import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
@@ -74,7 +73,7 @@ public class MessageStore {
         }
 
         try {
-            cradleManager.dispose();
+            cradleManager.close();
         } catch (Exception e) {
             LOGGER.error("Cannot dispose cradle manager", e);
         }
@@ -142,4 +141,3 @@ public class MessageStore {
         });
     }
 }
-

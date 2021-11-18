@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2020 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
@@ -20,8 +21,9 @@ import java.util.stream.Stream;
 import org.jetbrains.annotations.NotNull;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.messages.MessageBatchToStore;
 import com.exactpro.cradle.messages.MessageToStore;
-import com.exactpro.cradle.messages.StoredMessageBatch;
+import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageBatch;
 import com.exactpro.th2.common.grpc.MessageID;
@@ -44,13 +46,13 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     }
 
     @Override
-    protected MessageToStore convert(Message originalMessage) {
+    protected MessageToStore convert(Message originalMessage) throws CradleStorageException {
         return ProtoUtil.toCradleMessage(originalMessage);
     }
 
     @Override
-    protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch) {
-        return cradleStorage.storeProcessedMessageBatchAsync(storedMessageBatch);
+    protected CompletableFuture<Void> store(MessageBatchToStore messageBatchToStore) throws CradleStorageException, IOException {
+        return cradleStorage.storeMessageBatchAsync(messageBatchToStore);
     }
 
     @Override
@@ -73,5 +75,4 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     protected List<Message> getMessages(MessageBatch delivery) {
         return delivery.getMessagesList();
     }
-
 }

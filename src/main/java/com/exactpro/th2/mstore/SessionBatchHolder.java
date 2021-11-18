@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2020 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -16,23 +16,22 @@ package com.exactpro.th2.mstore;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 import org.jetbrains.annotations.NotNull;
 
-import com.exactpro.cradle.messages.StoredMessageBatch;
+import com.exactpro.cradle.messages.MessageBatchToStore;
 import com.exactpro.cradle.utils.CradleStorageException;
 
 public class SessionBatchHolder {
 
-    private final Supplier<StoredMessageBatch> batchSupplier;
+    private final Supplier<MessageBatchToStore> batchSupplier;
 
     private volatile Instant lastReset = Instant.now();
 
-    private volatile StoredMessageBatch holtBatch;
+    private volatile MessageBatchToStore holtBatch;
 
-    public SessionBatchHolder(Supplier<StoredMessageBatch> batchSupplier) {
+    public SessionBatchHolder(Supplier<MessageBatchToStore> batchSupplier) {
         this.batchSupplier = Objects.requireNonNull(batchSupplier, "'Batch supplier' parameter");
         holtBatch = batchSupplier.get();
     }
@@ -45,7 +44,7 @@ public class SessionBatchHolder {
      * @return {@code true} if the batch is successfully added to currently holt one. Otherwise, returns {@code false}
      * @throws CradleStorageException if batch doesn't meet requirements for adding to the currently holt one
      */
-    public boolean add(StoredMessageBatch batch) throws CradleStorageException {
+    public boolean add(MessageBatchToStore batch) throws CradleStorageException {
         return holtBatch.addBatch(batch);
     }
 
@@ -60,21 +59,20 @@ public class SessionBatchHolder {
     }
 
     @NotNull
-    public StoredMessageBatch reset() {
+    public MessageBatchToStore reset() {
         return internalReset(batchSupplier.get());
     }
 
     @NotNull
-    public StoredMessageBatch resetAndUpdate(StoredMessageBatch batch) {
+    public MessageBatchToStore resetAndUpdate(MessageBatchToStore batch) {
         Objects.requireNonNull(batch, "'Batch' parameter");
         return internalReset(batch);
     }
 
-    private StoredMessageBatch internalReset(StoredMessageBatch newValue) {
-        StoredMessageBatch currentBatch = holtBatch;
+    private MessageBatchToStore internalReset(MessageBatchToStore newValue) {
+        MessageBatchToStore currentBatch = holtBatch;
         holtBatch = newValue;
         lastReset = Instant.now();
-
         return currentBatch;
     }
 }

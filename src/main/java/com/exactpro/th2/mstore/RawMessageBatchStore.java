@@ -15,6 +15,7 @@ package com.exactpro.th2.mstore;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;

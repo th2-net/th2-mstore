@@ -43,8 +43,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleEntitiesFactory;
+import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.messages.MessageBatchToStore;
 import com.exactpro.cradle.utils.CradleStorageException;
@@ -143,7 +143,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     }
 
     private static void assertMessageBatchToStore(MessageBatchToStore batch, String sessionAlias, Direction direction, int count) {
-        assertEquals(ProtoUtil.toCradleDirection(direction), batch.getDirection());
+        assertEquals(toCradleDirection(direction), batch.getDirection());
         assertEquals(sessionAlias, batch.getSessionAlias());
         assertEquals(count, batch.getMessageCount());
     }
@@ -232,12 +232,12 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             assertEquals(2, value.size());
 
             MessageBatchToStore firstValue = value.stream()
-                    .filter(it -> it.getDirection() == ProtoUtil.toCradleDirection(Direction.FIRST))
+                    .filter(it -> it.getDirection() == toCradleDirection(Direction.FIRST))
                     .findFirst().orElseThrow();
             assertMessageBatchToStore(firstValue, "testA", Direction.FIRST, 1);
 
             MessageBatchToStore secondValue = value.stream()
-                    .filter(it -> it.getDirection() == ProtoUtil.toCradleDirection(Direction.SECOND))
+                    .filter(it -> it.getDirection() == toCradleDirection(Direction.SECOND))
                     .findFirst().orElseThrow();
             assertMessageBatchToStore(secondValue, "testB", Direction.SECOND, 1);
         }

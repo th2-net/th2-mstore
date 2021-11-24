@@ -254,6 +254,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     private static String formatMessageBatchToStore(MessageBatchToStore messageBatchToStore, boolean full) {
         ToStringBuilder builder = new ToStringBuilder(messageBatchToStore, NO_CLASS_NAME_STYLE)
+                .append("book name", messageBatchToStore.getId().getBookId().getName())
                 .append("session alias", messageBatchToStore.getSessionAlias())
                 .append("direction", messageBatchToStore.getId().getDirection())
                 .append("batch id", messageBatchToStore.getId().getSequence());

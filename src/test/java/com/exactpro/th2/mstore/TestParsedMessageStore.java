@@ -31,18 +31,21 @@ public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, M
     }
 
     @Override
-    protected AbstractMessageStore<MessageBatch, Message> createStore(CradleManager cradleManagerMock, MessageRouter<MessageBatch> routerMock,
-                                                                      MessageStoreConfiguration configuration) {
+    protected AbstractMessageStore<MessageBatch, Message> createStore(
+            CradleManager cradleManagerMock,
+            MessageRouter<MessageBatch> routerMock,
+            MessageStoreConfiguration configuration
+    ) {
         return new MessageBatchStore(routerMock, cradleManagerMock, configuration);
     }
 
     @Override
-    protected Message createMessage(String sessionAlias, Direction direction, long sequence) {
+    protected Message createMessage(String sessionAlias, Direction direction, long sequence, String bookName) {
         return Message.newBuilder()
                 .setMetadata(
                         MessageMetadata.newBuilder()
                                 .setMessageType("A")
-                                .setId(createMessageId(sessionAlias, direction, sequence, BOOK_NAME))
+                                .setId(createMessageId(sessionAlias, direction, sequence, bookName))
                                 .setTimestamp(createTimestamp())
                                 .build()
                 )

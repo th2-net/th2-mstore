@@ -31,21 +31,24 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
     }
 
     @Override
-    protected AbstractMessageStore<RawMessageBatch, RawMessage> createStore(CradleManager cradleManagerMock, MessageRouter<RawMessageBatch> routerMock,
-                                                                            MessageStoreConfiguration configuration) {
+    protected AbstractMessageStore<RawMessageBatch, RawMessage> createStore(
+            CradleManager cradleManagerMock,
+            MessageRouter<RawMessageBatch> routerMock,
+            MessageStoreConfiguration configuration
+    ) {
         return new RawMessageBatchStore(routerMock, cradleManagerMock, configuration);
     }
 
     @Override
-    protected RawMessage createMessage(String sessionAlias, Direction direction, long sequence) {
-            return RawMessage.newBuilder()
-                    .setMetadata(
-                            RawMessageMetadata.newBuilder()
-                                    .setId(createMessageId(sessionAlias, direction, sequence, BOOK_NAME))
-                                    .setTimestamp(createTimestamp())
-                                    .build()
-                    )
-                    .build();
+    protected RawMessage createMessage(String sessionAlias, Direction direction, long sequence, String bookName) {
+        return RawMessage.newBuilder()
+                .setMetadata(
+                        RawMessageMetadata.newBuilder()
+                                .setId(createMessageId(sessionAlias, direction, sequence, bookName))
+                                .setTimestamp(createTimestamp())
+                                .build()
+                )
+                .build();
     }
 
     @Override

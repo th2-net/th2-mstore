@@ -30,7 +30,8 @@ import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
-import com.exactpro.th2.store.common.utils.ProtoUtil;
+
+import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 
 public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.PARSED)
@@ -63,7 +64,7 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     @Override
     protected SessionKey createSessionKey(Message message) {
         MessageID messageID = message.getMetadata().getId();
-        return new SessionKey(messageID.getConnectionId().getSessionAlias(), ProtoUtil.toCradleDirection(messageID.getDirection()));
+        return new SessionKey(messageID.getConnectionId().getSessionAlias(), toCradleDirection(messageID.getDirection()));
     }
 
     @Override

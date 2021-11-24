@@ -13,9 +13,8 @@
 
 package com.exactpro.th2.mstore;
 
-import static com.exactpro.th2.store.common.utils.ProtoUtil.toCradleDirection;
+import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 
-import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
@@ -32,7 +31,6 @@ import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
-import com.exactpro.th2.store.common.utils.ProtoUtil;
 
 public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, RawMessage> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.RAW)

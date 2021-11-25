@@ -337,7 +337,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             batch = holder.reset();
         }
         if (batch.isEmpty()) {
-            logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing by scheduler",
+            logger.debug("Holder for session alias: '{}', direction: '{}' has been concurrently reset. Skip storing by scheduler",
                     key.getSessionAlias(), key.getDirection());
             return;
         }
@@ -365,7 +365,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         private final Direction direction;
 
         public SessionKey(String sessionAlias, Direction direction) {
-            this.sessionAlias = Objects.requireNonNull(sessionAlias, "'Stream name' parameter");
+            this.sessionAlias = Objects.requireNonNull(sessionAlias, "'Session alias' parameter");
             this.direction = Objects.requireNonNull(direction, "'Direction' parameter");
         }
 

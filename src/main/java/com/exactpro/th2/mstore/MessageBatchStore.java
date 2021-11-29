@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
@@ -20,16 +21,14 @@ import java.util.stream.Stream;
 import org.jetbrains.annotations.NotNull;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.messages.MessageBatchToStore;
 import com.exactpro.cradle.messages.MessageToStore;
-import com.exactpro.cradle.messages.StoredMessageBatch;
+import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageBatch;
-import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
-
-import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 
 public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.PARSED)
@@ -45,13 +44,13 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     }
 
     @Override
-    protected MessageToStore convert(Message originalMessage) {
+    protected MessageToStore convert(Message originalMessage) throws CradleStorageException {
         return ProtoUtil.toCradleMessage(originalMessage);
     }
 
     @Override
-    protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch) {
-        return cradleStorage.storeProcessedMessageBatchAsync(storedMessageBatch);
+    protected CompletableFuture<Void> store(MessageBatchToStore messageBatchToStore) throws CradleStorageException, IOException {
+        return cradleStorage.storeMessageBatchAsync(messageBatchToStore);
     }
 
     @Override
@@ -61,8 +60,7 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
 
     @Override
     protected SessionKey createSessionKey(Message message) {
-        MessageID messageID = message.getMetadata().getId();
-        return new SessionKey(messageID.getConnectionId().getSessionAlias(), toCradleDirection(messageID.getDirection()));
+        return new SessionKey(message.getMetadata().getId());
     }
 
     @Override

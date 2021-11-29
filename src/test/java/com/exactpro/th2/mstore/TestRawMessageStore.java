@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2020 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -31,21 +31,24 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
     }
 
     @Override
-    protected AbstractMessageStore<RawMessageBatch, RawMessage> createStore(CradleManager cradleManagerMock, MessageRouter<RawMessageBatch> routerMock,
-                                                                            MessageStoreConfiguration configuration) {
+    protected AbstractMessageStore<RawMessageBatch, RawMessage> createStore(
+            CradleManager cradleManagerMock,
+            MessageRouter<RawMessageBatch> routerMock,
+            MessageStoreConfiguration configuration
+    ) {
         return new RawMessageBatchStore(routerMock, cradleManagerMock, configuration);
     }
 
     @Override
-    protected RawMessage createMessage(String session, Direction direction, long sequence) {
-            return RawMessage.newBuilder()
-                    .setMetadata(
-                            RawMessageMetadata.newBuilder()
-                                    .setId(createMessageId(session, direction, sequence))
-                                    .setTimestamp(createTimestamp())
-                                    .build()
-                    )
-                    .build();
+    protected RawMessage createMessage(String sessionAlias, Direction direction, long sequence, String bookName) {
+        return RawMessage.newBuilder()
+                .setMetadata(
+                        RawMessageMetadata.newBuilder()
+                                .setId(createMessageId(sessionAlias, direction, sequence, bookName))
+                                .setTimestamp(createTimestamp())
+                                .build()
+                )
+                .build();
     }
 
     @Override

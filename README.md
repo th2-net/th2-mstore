@@ -64,7 +64,7 @@ spec:
 This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
 
-### 4.0.0
+## 4.0.0
 
 + Adaptation to books/pages cradleapi 4.0.0
 

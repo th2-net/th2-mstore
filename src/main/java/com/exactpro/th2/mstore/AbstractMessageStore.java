@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.google.protobuf.TextFormat.shortDebugString;
 import static java.util.Objects.requireNonNull;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
@@ -51,6 +52,7 @@ import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.cradle.utils.CradleStorageException;
+import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
@@ -221,8 +223,12 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
 
         if (holtBatch.isEmpty()) {
-            logger.debug("Holder for session alias: '{}', direction: '{}' has been concurrently reset. Skip storing",
-                    messageBatchToStore.getSessionAlias(), messageBatchToStore.getDirection());
+            logger.debug(
+                    "Holder for session alias: '{}', direction: '{}', book name: '{}' has been concurrently reset. Skip storing",
+                    messageBatchToStore.getSessionAlias(),
+                    messageBatchToStore.getDirection(),
+                    messageBatchToStore.getId().getBookId().getName()
+            );
         } else {
             storeBatchAsync(holtBatch);
         }
@@ -337,8 +343,12 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             batch = holder.reset();
         }
         if (batch.isEmpty()) {
-            logger.debug("Holder for session alias: '{}', direction: '{}' has been concurrently reset. Skip storing by scheduler",
-                    key.getSessionAlias(), key.getDirection());
+            logger.debug(
+                    "Holder for session alias: '{}', direction: '{}', book name: '{}' has been concurrently reset. Skip storing by scheduler",
+                    key.getSessionAlias(),
+                    key.getDirection(),
+                    key.getBookName()
+            );
             return;
         }
         try {
@@ -363,10 +373,12 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     protected static class SessionKey {
         private final String sessionAlias;
         private final Direction direction;
+        private final String bookName;
 
-        public SessionKey(String sessionAlias, Direction direction) {
-            this.sessionAlias = Objects.requireNonNull(sessionAlias, "'Session alias' parameter");
-            this.direction = Objects.requireNonNull(direction, "'Direction' parameter");
+        public SessionKey(MessageID messageID) {
+            this.sessionAlias = Objects.requireNonNull(messageID.getConnectionId().getSessionAlias(), "'Session alias' parameter");
+            this.direction = Objects.requireNonNull(toCradleDirection(messageID.getDirection()), "'Direction' parameter");
+            this.bookName = Objects.requireNonNull(messageID.getBookName(), "'Book name' parameter");
         }
 
         public String getSessionAlias() {
@@ -375,6 +387,10 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
         public Direction getDirection() {
             return direction;
+        }
+
+        public String getBookName() {
+            return bookName;
         }
 
         @Override
@@ -392,6 +408,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             return new EqualsBuilder()
                     .append(sessionAlias, that.sessionAlias)
                     .append(direction, that.direction)
+                    .append(bookName, that.bookName)
                     .isEquals();
         }
 
@@ -400,6 +417,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             return new HashCodeBuilder()
                     .append(sessionAlias)
                     .append(direction)
+                    .append(bookName)
                     .toHashCode();
         }
 
@@ -408,6 +426,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             return new ToStringBuilder(this, NO_CLASS_NAME_STYLE)
                     .append("sessionAlias", sessionAlias)
                     .append("direction", direction)
+                    .append("bookName", bookName)
                     .toString();
         }
     }

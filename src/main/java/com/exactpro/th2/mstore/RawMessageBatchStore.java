@@ -13,8 +13,6 @@
 
 package com.exactpro.th2.mstore;
 
-import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
-
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -26,7 +24,6 @@ import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.messages.MessageBatchToStore;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.schema.message.MessageRouter;
@@ -63,8 +60,7 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
 
     @Override
     protected SessionKey createSessionKey(RawMessage message) {
-        MessageID messageID = message.getMetadata().getId();
-        return new SessionKey(messageID.getConnectionId().getSessionAlias(), toCradleDirection(messageID.getDirection()));
+        return new SessionKey(message.getMetadata().getId());
     }
 
     @Override

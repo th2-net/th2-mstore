@@ -66,7 +66,7 @@ Please see more details about this feature via [link](https://github.com/th2-net
 
 ## 4.0.0
 
-+ Adaptation to books/pages cradleapi 4.0.0
++ Migration to books/pages cradle 4.0.0
 
 ## 3.4.1
 

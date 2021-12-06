@@ -57,7 +57,7 @@ jar {
 dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
-    implementation 'com.exactpro.th2:common:4.0.0-th2-2150-books-pages-1530756720-SNAPSHOT'
+    implementation 'com.exactpro.th2:common:4.0.0-th2-2150-books-pages-1546244722-SNAPSHOT'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 

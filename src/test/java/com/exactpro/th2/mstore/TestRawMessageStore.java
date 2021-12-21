@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import java.time.Instant;
 import java.util.List;
 
 import com.exactpro.cradle.CradleManager;
@@ -44,8 +45,7 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
         return RawMessage.newBuilder()
                 .setMetadata(
                         RawMessageMetadata.newBuilder()
-                                .setId(createMessageId(sessionAlias, direction, sequence, bookName))
-                                .setTimestamp(createTimestamp())
+                                .setId(createMessageId(Instant.now(), sessionAlias, direction, sequence, bookName))
                                 .build()
                 )
                 .build();
@@ -65,6 +65,6 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
 
     @Override
     protected Timestamp extractTimestamp(RawMessage message) {
-        return message.getMetadata().getTimestamp();
+        return message.getMetadata().getId().getTimestamp();
     }
 }

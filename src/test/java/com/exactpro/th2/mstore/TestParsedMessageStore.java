@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import java.time.Instant;
 import java.util.List;
 
 import com.exactpro.cradle.CradleManager;
@@ -45,8 +46,7 @@ public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, M
                 .setMetadata(
                         MessageMetadata.newBuilder()
                                 .setMessageType("A")
-                                .setId(createMessageId(sessionAlias, direction, sequence, bookName))
-                                .setTimestamp(createTimestamp())
+                                .setId(createMessageId(Instant.now(), sessionAlias, direction, sequence, bookName))
                                 .build()
                 )
                 .build();
@@ -66,6 +66,6 @@ public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, M
 
     @Override
     protected Timestamp extractTimestamp(Message message) {
-        return message.getMetadata().getTimestamp();
+        return message.getMetadata().getId().getTimestamp();
     }
 }

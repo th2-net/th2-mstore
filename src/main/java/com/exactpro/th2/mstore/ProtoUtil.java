@@ -22,37 +22,34 @@ import com.exactpro.cradle.messages.MessageToStoreBuilder;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageID;
-import com.exactpro.th2.common.grpc.MessageMetadata;
 import com.exactpro.th2.common.grpc.RawMessage;
-import com.exactpro.th2.common.grpc.RawMessageMetadata;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 
 public class ProtoUtil {
     public static MessageToStore toCradleMessage(Message protoMessage) throws CradleStorageException {
-        MessageMetadata metadata = protoMessage.getMetadata();
-        MessageID messageID = metadata.getId();
-        return new MessageToStoreBuilder()
-                .bookId(new BookId(protoMessage.getMetadata().getId().getBookName()))
-                .sessionAlias(messageID.getConnectionId().getSessionAlias())
-                .direction(toCradleDirection(messageID.getDirection()))
-                .timestamp(toInstant(metadata.getTimestamp()))
-                .sequence(messageID.getSequence())
-                .content(protoMessage.toByteArray())
-                .build();
+        return createMessageToStore(
+                protoMessage.getMetadata().getId(),
+                protoMessage.toByteArray()
+        );
     }
 
     public static MessageToStore toCradleMessage(RawMessage protoRawMessage) throws CradleStorageException {
-        RawMessageMetadata metadata = protoRawMessage.getMetadata();
-        MessageID messageID = metadata.getId();
+        return createMessageToStore(
+                protoRawMessage.getMetadata().getId(),
+                protoRawMessage.toByteArray()
+        );
+    }
+
+    private static MessageToStore createMessageToStore(MessageID messageId, byte[] byteArray) throws CradleStorageException {
         return new MessageToStoreBuilder()
-                .bookId(new BookId(protoRawMessage.getMetadata().getId().getBookName()))
-                .sessionAlias(messageID.getConnectionId().getSessionAlias())
-                .direction(toCradleDirection(messageID.getDirection()))
-                .timestamp(toInstant(metadata.getTimestamp()))
-                .sequence(messageID.getSequence())
-                .content(protoRawMessage.toByteArray())
+                .bookId(new BookId(messageId.getBookName()))
+                .sessionAlias(messageId.getConnectionId().getSessionAlias())
+                .direction(toCradleDirection(messageId.getDirection()))
+                .timestamp(toInstant(messageId.getTimestamp()))
+                .sequence(messageId.getSequence())
+                .content(byteArray)
                 .build();
     }
 }

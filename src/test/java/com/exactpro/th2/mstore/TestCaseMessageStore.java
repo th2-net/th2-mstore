@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import static com.exactpro.th2.common.event.EventUtils.toTimestamp;
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -113,20 +114,13 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     protected abstract Timestamp extractTimestamp(M message);
 
     @NotNull
-    protected MessageID createMessageId(String sessionAlias, Direction direction, long sequence, String bookName) {
+    protected MessageID createMessageId(Instant timestamp, String sessionAlias, Direction direction, long sequence, String bookName) {
         return MessageID.newBuilder()
+                .setTimestamp(toTimestamp(timestamp))
                 .setConnectionId(ConnectionID.newBuilder().setSessionAlias(sessionAlias).build())
                 .setDirection(direction)
                 .setSequence(sequence)
                 .setBookName(bookName)
-                .build();
-    }
-
-    protected Timestamp createTimestamp() {
-        Instant now = Instant.now();
-        return Timestamp.newBuilder()
-                .setSeconds(now.getEpochSecond())
-                .setNanos(now.getNano())
                 .build();
     }
 

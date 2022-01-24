@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -13,6 +13,8 @@
 
 package com.exactpro.th2.mstore;
 
+import static com.exactpro.cradle.serialization.MessagesSizeCalculator.MESSAGE_LENGTH_IN_BATCH;
+import static com.exactpro.cradle.serialization.MessagesSizeCalculator.MESSAGE_SIZE_CONST_VALUE;
 import static com.exactpro.th2.common.event.EventUtils.toTimestamp;
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -304,11 +306,18 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             assertMessageBatchToStore(value, bookName, "test", Direction.FIRST, 2);
         }
 
+        /**
+         * Message size calculation changed in Cradle, please see
+         * {@link com.exactpro.cradle.serialization.MessagesSizeCalculator#calculateMessageSizeInBatch(com.exactpro.cradle.messages.CradleMessage)}
+         * {@link com.exactpro.cradle.serialization.MessagesSizeCalculator#calculateMessageSize(com.exactpro.cradle.messages.CradleMessage)}
+         */
         @Test
         @DisplayName("Stores batch if cannot join because of messages size")
         void storesBatch() throws IOException, CradleStorageException {
             String bookName = bookName(random.nextInt());
-            long oneMessageSize = extractSize(createMessage("test", Direction.FIRST, 1, bookName));
+            long oneMessageSize = extractSize(createMessage("test", Direction.FIRST, 1, bookName))
+                    + MESSAGE_LENGTH_IN_BATCH
+                    + MESSAGE_SIZE_CONST_VALUE;
             long maxMessagesInBatchCount = TEST_MESSAGE_BATCH_SIZE / oneMessageSize;
             List<M> firstDelivery = LongStream.range(0, maxMessagesInBatchCount / 2)
                     .mapToObj(it -> createMessage("test", Direction.FIRST, it, bookName))

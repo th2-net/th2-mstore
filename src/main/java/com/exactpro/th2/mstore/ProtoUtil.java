@@ -26,6 +26,8 @@ import com.exactpro.th2.common.grpc.RawMessageMetadata;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
+import static org.apache.commons.lang3.StringUtils.trimToEmpty;
 
 public class ProtoUtil {
     public static MessageToStore toCradleMessage(Message protoMessage) {
@@ -43,12 +45,17 @@ public class ProtoUtil {
     public static MessageToStore toCradleMessage(RawMessage protoRawMessage) {
         RawMessageMetadata metadata = protoRawMessage.getMetadata();
         MessageID messageID = metadata.getId();
-        return new MessageToStoreBuilder()
+        MessageToStoreBuilder builder = new MessageToStoreBuilder()
                 .streamName(messageID.getConnectionId().getSessionAlias())
                 .content(protoRawMessage.toByteArray())
                 .timestamp(toInstant(metadata.getTimestamp()))
                 .direction(toCradleDirection(messageID.getDirection()))
-                .index(messageID.getSequence())
-                .build();
+                .index(messageID.getSequence());
+        metadata.getPropertiesMap().forEach((key, value) -> {
+            if (isNotBlank(key) || isNotBlank(value)) {
+                builder.metadata(trimToEmpty(key), trimToEmpty(value));
+            }
+        });
+        return builder.build();
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2020 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import java.time.Instant;
 import java.util.List;
 
 import com.exactpro.cradle.CradleManager;
@@ -37,15 +38,15 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
     }
 
     @Override
-    protected RawMessage createMessage(String session, Direction direction, long sequence) {
-            return RawMessage.newBuilder()
-                    .setMetadata(
-                            RawMessageMetadata.newBuilder()
-                                    .setId(createMessageId(session, direction, sequence))
-                                    .setTimestamp(createTimestamp())
-                                    .build()
-                    )
-                    .build();
+    protected RawMessage createMessage(String session, Direction direction, long sequence, Instant timestamp) {
+        return RawMessage.newBuilder()
+                .setMetadata(
+                        RawMessageMetadata.newBuilder()
+                                .setId(createMessageId(session, direction, sequence))
+                                .setTimestamp(toTimestamp(timestamp))
+                                .build()
+                )
+                .build();
     }
 
     @Override

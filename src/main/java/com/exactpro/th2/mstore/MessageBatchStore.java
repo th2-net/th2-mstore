@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
@@ -30,6 +31,7 @@ import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
+import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 
 public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.PARSED)
@@ -63,6 +65,11 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     protected SessionKey createSessionKey(Message message) {
         MessageID messageID = message.getMetadata().getId();
         return new SessionKey(messageID.getConnectionId().getSessionAlias(), toCradleDirection(messageID.getDirection()));
+    }
+
+    @Override
+    protected Instant extractTimestamp(Message message) {
+        return toInstant(message.getMetadata().getTimestamp());
     }
 
     @Override

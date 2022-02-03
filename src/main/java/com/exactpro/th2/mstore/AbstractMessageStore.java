@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -14,9 +14,12 @@
 package com.exactpro.th2.mstore;
 
 import static com.google.protobuf.TextFormat.shortDebugString;
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
+import static java.util.function.BinaryOperator.maxBy;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -32,6 +35,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -183,15 +187,34 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                 }
                 return;
             }
+            M firstMessage = messages.get(0);
             M lastMessage = messages.get(messages.size() - 1);
-            long firstSequence = extractSequence(messages.get(0));
+            SessionData sessionData = sessionToHolder.computeIfAbsent(
+                    createSessionKey(lastMessage),
+                    ignore -> new SessionData(cradleStorage.getObjectsFactory()::createMessageBatch)
+            );
+
+            long firstSequence = extractSequence(firstMessage);
             long lastSequence = extractSequence(lastMessage);
-            SessionKey sessionKey = createSessionKey(lastMessage);
-            SessionData sessionData = sessionToHolder.computeIfAbsent(sessionKey, ignore ->
-                    new SessionData(cradleStorage.getObjectsFactory()::createMessageBatch));
-            long prevLastSeq = sessionData.getAndUpdateSequence(lastSequence);
-            if (prevLastSeq >= firstSequence) {
-                logger.error("Duplicated batch found: {}", shortDebugString(messageBatch));
+            long previousBatchLastSequence = sessionData.getAndUpdateLastSequence(lastSequence);
+            if (previousBatchLastSequence >= firstSequence) {
+                logger.error(
+                        "Found batch with less or equal sequence: {}. Last sequence from previous batch: {}",
+                        shortDebugString(messageBatch),
+                        previousBatchLastSequence
+                );
+                return;
+            }
+
+            Instant firstTimestamp = extractTimestamp(firstMessage);
+            Instant lastTimestamp = extractTimestamp(lastMessage);
+            Instant previousBatchLastTimestamp = sessionData.getAndUpdateLastTimestamp(lastTimestamp);
+            if (previousBatchLastTimestamp.isAfter(firstTimestamp)) {
+                logger.error(
+                        "Found batch with less timestamp: {}. Last timestamp from previous batch: {}",
+                        shortDebugString(messageBatch),
+                        previousBatchLastTimestamp
+                );
                 return;
             }
             storeMessages(messages, sessionData.getBatchHolder());
@@ -275,43 +298,61 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
      */
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
-        SessionKey lastKey = null;
-        long lastSeq = Long.MIN_VALUE;
+        SessionKey previousKey = null;
+        long previousSequence = Long.MIN_VALUE;
+        Instant previousTimestamp = Instant.MIN;
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);
             SessionKey sessionKey = createSessionKey(message);
-            if (lastKey == null) {
-                lastKey = sessionKey;
+            if (previousKey == null) {
+                previousKey = sessionKey;
             } else {
-                verifySession(i, lastKey, sessionKey);
+                verifySession(i, previousKey, sessionKey);
             }
 
-            long currentSeq = extractSequence(message);
-            verifySequence(i, lastSeq, currentSeq);
-            lastSeq = currentSeq;
-        }
+            long currentSequence = extractSequence(message);
+            verifySequence(i, previousSequence, currentSequence);
+            previousSequence = currentSequence;
 
-    }
-
-    private static void verifySequence(int messageIndex, long lastSeq, long currentSeq) {
-        if (lastSeq >= currentSeq) {
-            throw new IllegalArgumentException(
-                    String.format(
-                            "Delivery contains unordered messages. Message [%d] - seqN %d; Message [%d] - seqN %d",
-                            messageIndex - 1, lastSeq, messageIndex, currentSeq
-                    )
-            );
+            Instant currentTimestamp = extractTimestamp(message);
+            verifyTimestamp(i, previousTimestamp, currentTimestamp);
+            previousTimestamp = currentTimestamp;
         }
     }
 
-    private static void verifySession(int messageIndex, SessionKey lastKey, SessionKey sessionKey) {
-        if (!lastKey.equals(sessionKey)) {
-            throw new IllegalArgumentException(
-                    String.format(
-                            "Delivery contains different sessions. Message [%d] - session %s; Message [%d] - session %s",
-                            messageIndex - 1, lastKey, messageIndex, sessionKey
-                    )
-            );
+    private static void verifySession(int messageIndex, SessionKey previousKey, SessionKey sessionKey) {
+        if (!previousKey.equals(sessionKey)) {
+            throw new IllegalArgumentException(format(
+                    "Delivery contains different sessions. Message [%d] - session %s; Message [%d] - session %s",
+                    messageIndex - 1,
+                    previousKey,
+                    messageIndex,
+                    sessionKey
+            ));
+        }
+    }
+
+    private static void verifySequence(int messageIndex, long previousSequence, long currentSequence) {
+        if (previousSequence >= currentSequence) {
+            throw new IllegalArgumentException(format(
+                    "Delivery contains unordered messages. Message [%d] - sequence %d; Message [%d] - sequence %d",
+                    messageIndex - 1,
+                    previousSequence,
+                    messageIndex,
+                    currentSequence
+            ));
+        }
+    }
+
+    private static void verifyTimestamp(int messageIndex, Instant previousTimestamp, Instant currentTimestamp) {
+        if (previousTimestamp.isAfter(currentTimestamp)) {
+            throw new IllegalArgumentException(format(
+                    "Delivery contains unordered messages. Message [%d] - timestamp %s; Message [%d] - timestamp %s",
+                    messageIndex - 1,
+                    previousTimestamp,
+                    messageIndex,
+                    currentTimestamp
+            ));
         }
     }
 
@@ -357,6 +398,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     protected abstract long extractSequence(M message);
 
     protected abstract SessionKey createSessionKey(M message);
+
+    protected abstract Instant extractTimestamp(M message);
 
     protected static class SessionKey {
         private final String streamName;
@@ -412,6 +455,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     private static class SessionData {
         private final AtomicLong lastSequence = new AtomicLong(Long.MIN_VALUE);
+        private final AtomicReference<Instant> lastTimestamp = new AtomicReference<>(Instant.MIN);
 
         private final SessionBatchHolder batchHolder;
 
@@ -419,8 +463,12 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             batchHolder = new SessionBatchHolder(Objects.requireNonNull(batchSupplier, "'batchSupplier' cannot be null"));
         }
 
-        public long getAndUpdateSequence(long newLastSeq) {
-            return lastSequence.getAndAccumulate(newLastSeq, Math::max);
+        public long getAndUpdateLastSequence(long newLastSequence) {
+            return lastSequence.getAndAccumulate(newLastSequence, Math::max);
+        }
+
+        public Instant getAndUpdateLastTimestamp(Instant newLastTimestamp) {
+            return lastTimestamp.getAndAccumulate(newLastTimestamp, maxBy(Instant::compareTo));
         }
 
         public SessionBatchHolder getBatchHolder() {

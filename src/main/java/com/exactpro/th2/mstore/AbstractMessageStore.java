@@ -198,11 +198,13 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             long lastSequence = extractSequence(lastMessage);
             long previousBatchLastSequence = sessionData.getAndUpdateLastSequence(lastSequence);
             if (previousBatchLastSequence >= firstSequence) {
-                logger.error(
-                        "Found batch with less or equal sequence: {}. Last sequence from previous batch: {}",
-                        shortDebugString(messageBatch),
-                        previousBatchLastSequence
-                );
+                if (logger.isErrorEnabled()) {
+                    logger.error(
+                            "Found batch with less or equal sequence: {}. Last sequence from previous batch: {}",
+                            shortDebugString(messageBatch),
+                            previousBatchLastSequence
+                    );
+                }
                 return;
             }
 
@@ -210,11 +212,13 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             Instant lastTimestamp = extractTimestamp(lastMessage);
             Instant previousBatchLastTimestamp = sessionData.getAndUpdateLastTimestamp(lastTimestamp);
             if (previousBatchLastTimestamp.isAfter(firstTimestamp)) {
-                logger.error(
-                        "Found batch with less timestamp: {}. Last timestamp from previous batch: {}",
-                        shortDebugString(messageBatch),
-                        previousBatchLastTimestamp
-                );
+                if (logger.isErrorEnabled()) {
+                    logger.error(
+                            "Found batch with less timestamp: {}. Last timestamp from previous batch: {}",
+                            shortDebugString(messageBatch),
+                            previousBatchLastTimestamp
+                    );
+                }
                 return;
             }
             storeMessages(messages, sessionData.getBatchHolder());

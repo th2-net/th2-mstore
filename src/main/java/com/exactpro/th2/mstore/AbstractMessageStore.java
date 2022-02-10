@@ -13,13 +13,14 @@
 
 package com.exactpro.th2.mstore;
 
+import static com.exactpro.th2.common.util.StorageUtils.toInstant;
+import static com.exactpro.th2.mstore.SequenceToTimestamp.SEQUENCE_TO_TIMESTAMP_COMPARATOR;
 import static com.google.protobuf.TextFormat.shortDebugString;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.BinaryOperator.maxBy;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
-import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -34,7 +35,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -194,29 +194,25 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     ignore -> new SessionData(cradleStorage.getObjectsFactory()::createMessageBatch)
             );
 
-            long firstSequence = extractSequence(firstMessage);
-            long lastSequence = extractSequence(lastMessage);
-            long previousBatchLastSequence = sessionData.getAndUpdateLastSequence(lastSequence);
-            if (previousBatchLastSequence >= firstSequence) {
+            SequenceToTimestamp first = extractSequenceToTimestamp(firstMessage);
+            SequenceToTimestamp last = extractSequenceToTimestamp(lastMessage);
+            SequenceToTimestamp previousBatchLast = sessionData.getAndUpdateLastSequenceToTimestamp(last);
+            if (first.sequenceIsLessOrEquals(previousBatchLast)) {
                 if (logger.isErrorEnabled()) {
                     logger.error(
                             "Found batch with less or equal sequence: {}. Last sequence from previous batch: {}",
                             shortDebugString(messageBatch),
-                            previousBatchLastSequence
+                            previousBatchLast.getSequence()
                     );
                 }
                 return;
             }
-
-            Instant firstTimestamp = extractTimestamp(firstMessage);
-            Instant lastTimestamp = extractTimestamp(lastMessage);
-            Instant previousBatchLastTimestamp = sessionData.getAndUpdateLastTimestamp(lastTimestamp);
-            if (previousBatchLastTimestamp.isAfter(firstTimestamp)) {
+            if (first.timestampIsLess(previousBatchLast)) {
                 if (logger.isErrorEnabled()) {
                     logger.error(
                             "Found batch with less timestamp: {}. Last timestamp from previous batch: {}",
                             shortDebugString(messageBatch),
-                            previousBatchLastTimestamp
+                            toInstant(previousBatchLast.getTimestamp())
                     );
                 }
                 return;
@@ -303,8 +299,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
         SessionKey previousKey = null;
-        long previousSequence = Long.MIN_VALUE;
-        Instant previousTimestamp = Instant.MIN;
+        SequenceToTimestamp previousSequenceToTimestamp = new SequenceToTimestamp();
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);
             SessionKey sessionKey = createSessionKey(message);
@@ -314,13 +309,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                 verifySession(i, previousKey, sessionKey);
             }
 
-            long currentSequence = extractSequence(message);
-            verifySequence(i, previousSequence, currentSequence);
-            previousSequence = currentSequence;
-
-            Instant currentTimestamp = extractTimestamp(message);
-            verifyTimestamp(i, previousTimestamp, currentTimestamp);
-            previousTimestamp = currentTimestamp;
+            SequenceToTimestamp currentSequenceToTimestamp = extractSequenceToTimestamp(message);
+            verifySequenceToTimestamp(i, previousSequenceToTimestamp, currentSequenceToTimestamp);
+            previousSequenceToTimestamp = currentSequenceToTimestamp;
         }
     }
 
@@ -336,26 +327,27 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
 
-    private static void verifySequence(int messageIndex, long previousSequence, long currentSequence) {
-        if (previousSequence >= currentSequence) {
+    private static void verifySequenceToTimestamp(
+            int messageIndex,
+            SequenceToTimestamp previous,
+            SequenceToTimestamp current
+    ) {
+        if (current.sequenceIsLessOrEquals(previous)) {
             throw new IllegalArgumentException(format(
                     "Delivery contains unordered messages. Message [%d] - sequence %d; Message [%d] - sequence %d",
                     messageIndex - 1,
-                    previousSequence,
+                    previous.getSequence(),
                     messageIndex,
-                    currentSequence
+                    current.getSequence()
             ));
         }
-    }
-
-    private static void verifyTimestamp(int messageIndex, Instant previousTimestamp, Instant currentTimestamp) {
-        if (previousTimestamp.isAfter(currentTimestamp)) {
+        if (current.timestampIsLess(previous)) {
             throw new IllegalArgumentException(format(
                     "Delivery contains unordered messages. Message [%d] - timestamp %s; Message [%d] - timestamp %s",
                     messageIndex - 1,
-                    previousTimestamp,
+                    toInstant(previous.getTimestamp()),
                     messageIndex,
-                    currentTimestamp
+                    toInstant(current.getTimestamp())
             ));
         }
     }
@@ -399,11 +391,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     protected abstract CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch);
 
-    protected abstract long extractSequence(M message);
+    protected abstract SequenceToTimestamp extractSequenceToTimestamp(M message);
 
     protected abstract SessionKey createSessionKey(M message);
-
-    protected abstract Instant extractTimestamp(M message);
 
     protected static class SessionKey {
         private final String streamName;
@@ -458,8 +448,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
     private static class SessionData {
-        private final AtomicLong lastSequence = new AtomicLong(Long.MIN_VALUE);
-        private final AtomicReference<Instant> lastTimestamp = new AtomicReference<>(Instant.MIN);
+        private final AtomicReference<SequenceToTimestamp> lastSequenceToTimestamp = new AtomicReference<>(new SequenceToTimestamp());
 
         private final SessionBatchHolder batchHolder;
 
@@ -467,12 +456,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             batchHolder = new SessionBatchHolder(Objects.requireNonNull(batchSupplier, "'batchSupplier' cannot be null"));
         }
 
-        public long getAndUpdateLastSequence(long newLastSequence) {
-            return lastSequence.getAndAccumulate(newLastSequence, Math::max);
-        }
-
-        public Instant getAndUpdateLastTimestamp(Instant newLastTimestamp) {
-            return lastTimestamp.getAndAccumulate(newLastTimestamp, maxBy(Instant::compareTo));
+        public SequenceToTimestamp getAndUpdateLastSequenceToTimestamp(SequenceToTimestamp newLastSequenceToTimestamp) {
+            return lastSequenceToTimestamp.getAndAccumulate(newLastSequenceToTimestamp, maxBy(SEQUENCE_TO_TIMESTAMP_COMPARATOR));
         }
 
         public SessionBatchHolder getBatchHolder() {

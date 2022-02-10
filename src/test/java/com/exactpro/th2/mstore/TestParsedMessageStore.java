@@ -26,6 +26,8 @@ import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.Timestamp;
 
+import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
+
 public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, Message> {
     TestParsedMessageStore() {
         super(CradleStorage::storeProcessedMessageBatchAsync);

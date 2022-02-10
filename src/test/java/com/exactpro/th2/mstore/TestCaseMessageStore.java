@@ -129,13 +129,6 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
                 .build();
     }
 
-    protected Timestamp toTimestamp(Instant timestamp) {
-        return Timestamp.newBuilder()
-                .setSeconds(timestamp.getEpochSecond())
-                .setNanos(timestamp.getNano())
-                .build();
-    }
-
     @SafeVarargs
     @SuppressWarnings("varargs")
     private T deliveryOf(M... messages) {

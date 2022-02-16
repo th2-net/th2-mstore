@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2020 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -14,6 +14,7 @@
 package com.exactpro.th2.mstore;
 
 import static com.google.protobuf.TextFormat.shortDebugString;
+import static java.util.Objects.requireNonNull;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
 import java.util.Collection;
@@ -25,11 +26,11 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -38,8 +39,11 @@ import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.Direction;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.StoredMessage;
@@ -47,36 +51,60 @@ import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
-import com.exactpro.th2.store.common.AbstractStorage;
 import com.google.protobuf.GeneratedMessageV3;
 
-public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> extends AbstractStorage<T> {
+public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
+    private static final Logger logger = LoggerFactory.getLogger(AbstractMessageStore.class);
+
+    protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessionToHolder = new ConcurrentHashMap<>();
     private final MessageStoreConfiguration configuration;
     private final Map<CompletableFuture<Void>, StoredMessageBatch> asyncStoreFutures = new ConcurrentHashMap<>();
     private volatile ScheduledFuture<?> future;
+    private final MessageRouter<T> router;
+    private SubscriberMonitor monitor;
 
     public AbstractMessageStore(
-            MessageRouter<T> router,
+            @NotNull MessageRouter<T> router,
             @NotNull CradleManager cradleManager,
             @NotNull MessageStoreConfiguration configuration
     ) {
-        super(router, cradleManager);
+        this.router = requireNonNull(router, "Message router can't be null");
+        cradleStorage = requireNonNull(cradleManager.getStorage(), "Cradle storage can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
     }
 
-    @Override
     public void start() {
-        super.start();
+        if (monitor == null) {
+            monitor = router.subscribeAll((tag, delivery) -> {
+                try {
+                    handle(delivery);
+                } catch (Exception e) {
+                    logger.warn("Can not handle delivery from consumer = {}", tag, e);
+                }
+            }, getAttributes());
+            if (monitor != null) {
+                logger.info("RabbitMQ subscribing was successful");
+            } else {
+                logger.error("Can not find queues for subscribe");
+                throw new RuntimeException("Can not find queues for subscriber");
+            }
+        }
         future = drainExecutor.scheduleAtFixedRate(this::drainByScheduler, configuration.getDrainInterval(), configuration.getDrainInterval(), TimeUnit.MILLISECONDS);
         logger.info("Drain scheduler is started");
     }
 
-    @Override
     public void dispose() {
-        super.dispose();
+        if (monitor != null) {
+            try {
+                monitor.unsubscribe();
+            } catch (Exception e) {
+                logger.error("Can not unsubscribe from queues", e);
+            }
+        }
         try {
             ScheduledFuture<?> future = this.future;
             if (future != null) {
@@ -145,7 +173,6 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
 
-    @Override
     public final void handle(T messageBatch) {
         try {
             verifyBatch(messageBatch);
@@ -318,6 +345,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             logger.error("Cannot store batch for session {}", key, ex);
         }
     }
+
+    protected abstract String[] getAttributes();
 
     protected abstract List<M> getMessages(T delivery);
 

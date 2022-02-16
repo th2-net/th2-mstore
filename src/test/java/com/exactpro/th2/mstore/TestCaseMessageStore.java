@@ -29,11 +29,11 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
 import org.jetbrains.annotations.NotNull;
@@ -56,7 +56,6 @@ import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
-import com.exactpro.th2.store.common.utils.ProtoUtil;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.TimestampOrBuilder;
@@ -146,7 +145,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     }
 
     private static void assertStoredMessageBatch(StoredMessageBatch batch, String streamName, Direction direction, int count) {
-        assertEquals(ProtoUtil.toCradleDirection(direction), batch.getDirection());
+        assertEquals(toCradleDirection(direction), batch.getDirection());
         assertEquals(streamName, batch.getStreamName());
         assertEquals(count, batch.getMessageCount());
     }
@@ -235,12 +234,12 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             assertEquals(2, value.size());
 
             StoredMessageBatch firstValue = value.stream()
-                    .filter(it -> it.getDirection() == ProtoUtil.toCradleDirection(Direction.FIRST))
+                    .filter(it -> it.getDirection() == toCradleDirection(Direction.FIRST))
                     .findFirst().orElseThrow();
             assertStoredMessageBatch(firstValue, "testA", Direction.FIRST, 1);
 
             StoredMessageBatch secondValue = value.stream()
-                    .filter(it -> it.getDirection() == ProtoUtil.toCradleDirection(Direction.SECOND))
+                    .filter(it -> it.getDirection() == toCradleDirection(Direction.SECOND))
                     .findFirst().orElseThrow();
             assertStoredMessageBatch(secondValue, "testB", Direction.SECOND, 1);
         }

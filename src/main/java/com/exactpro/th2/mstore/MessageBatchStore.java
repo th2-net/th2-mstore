@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2020 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -28,7 +28,8 @@ import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
-import com.exactpro.th2.store.common.utils.ProtoUtil;
+
+import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 
 public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.PARSED)
@@ -61,7 +62,7 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     @Override
     protected SessionKey createSessionKey(Message message) {
         MessageID messageID = message.getMetadata().getId();
-        return new SessionKey(messageID.getConnectionId().getSessionAlias(), ProtoUtil.toCradleDirection(messageID.getDirection()));
+        return new SessionKey(messageID.getConnectionId().getSessionAlias(), toCradleDirection(messageID.getDirection()));
     }
 
     @Override
@@ -73,5 +74,4 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     protected List<Message> getMessages(MessageBatch delivery) {
         return delivery.getMessagesList();
     }
-
 }

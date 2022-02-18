@@ -45,17 +45,24 @@ public class ProtoUtil {
     public static MessageToStore toCradleMessage(RawMessage protoRawMessage) {
         RawMessageMetadata metadata = protoRawMessage.getMetadata();
         MessageID messageID = metadata.getId();
-        MessageToStoreBuilder builder = new MessageToStoreBuilder()
+//        MessageToStoreBuilder builder = new MessageToStoreBuilder()
+//                .streamName(messageID.getConnectionId().getSessionAlias())
+//                .content(protoRawMessage.toByteArray())
+//                .timestamp(toInstant(metadata.getTimestamp()))
+//                .direction(toCradleDirection(messageID.getDirection()))
+//                .index(messageID.getSequence());
+//        metadata.getPropertiesMap().forEach((key, value) -> {
+//            if (isNotBlank(key) || isNotBlank(value)) {
+//                builder.metadata(trimToEmpty(key), trimToEmpty(value));
+//            }
+//        });
+//        return builder.build();
+        return new MessageToStoreBuilder()
                 .streamName(messageID.getConnectionId().getSessionAlias())
                 .content(protoRawMessage.toByteArray())
                 .timestamp(toInstant(metadata.getTimestamp()))
                 .direction(toCradleDirection(messageID.getDirection()))
-                .index(messageID.getSequence());
-        metadata.getPropertiesMap().forEach((key, value) -> {
-            if (isNotBlank(key) || isNotBlank(value)) {
-                builder.metadata(trimToEmpty(key), trimToEmpty(value));
-            }
-        });
-        return builder.build();
+                .index(messageID.getSequence())
+                .build();
     }
 }

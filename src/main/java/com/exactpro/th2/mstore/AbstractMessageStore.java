@@ -197,7 +197,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             storeMessages(messages, sessionData.getBatchHolder());
         } catch (Exception ex) {
             if (logger.isErrorEnabled()) {
-                logger.error("Cannot handle the batch of type {} message id {}", messageBatch.getClass(), shortDebugString(messageBatch), ex);
+                logger.error("Cannot handle the batch {}", shortDebugString(messageBatch), ex);
             }
         }
     }

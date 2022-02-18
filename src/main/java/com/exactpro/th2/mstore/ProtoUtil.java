@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2021-2022 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ import com.exactpro.th2.common.grpc.RawMessageMetadata;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
+import static org.apache.commons.lang3.StringUtils.isNotBlank;
+import static org.apache.commons.lang3.StringUtils.trimToEmpty;
 
 public class ProtoUtil {
     public static MessageToStore toCradleMessage(Message protoMessage) {
@@ -43,6 +45,18 @@ public class ProtoUtil {
     public static MessageToStore toCradleMessage(RawMessage protoRawMessage) {
         RawMessageMetadata metadata = protoRawMessage.getMetadata();
         MessageID messageID = metadata.getId();
+//        MessageToStoreBuilder builder = new MessageToStoreBuilder()
+//                .streamName(messageID.getConnectionId().getSessionAlias())
+//                .content(protoRawMessage.toByteArray())
+//                .timestamp(toInstant(metadata.getTimestamp()))
+//                .direction(toCradleDirection(messageID.getDirection()))
+//                .index(messageID.getSequence());
+//        metadata.getPropertiesMap().forEach((key, value) -> {
+//            if (isNotBlank(key) || isNotBlank(value)) {
+//                builder.metadata(trimToEmpty(key), trimToEmpty(value));
+//            }
+//        });
+//        return builder.build();
         return new MessageToStoreBuilder()
                 .streamName(messageID.getConnectionId().getSessionAlias())
                 .content(protoRawMessage.toByteArray())

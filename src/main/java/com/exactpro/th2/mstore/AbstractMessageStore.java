@@ -200,9 +200,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             if (first.sequenceIsLessOrEquals(previousBatchLast)) {
                 if (logger.isErrorEnabled()) {
                     logger.error(
-                            "Found batch with less or equal sequence: {}. Last sequence from previous batch: {}",
-                            shortDebugString(messageBatch),
-                            previousBatchLast.getSequence()
+                            "Found batch with less or equal sequence. Last sequence from previous batch: {}. Founded batch: {}",
+                            previousBatchLast.getSequence(),
+                            shortDebugString(messageBatch)
                     );
                 }
                 return;
@@ -210,9 +210,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             if (first.timestampIsLess(previousBatchLast)) {
                 if (logger.isErrorEnabled()) {
                     logger.error(
-                            "Found batch with less timestamp: {}. Last timestamp from previous batch: {}",
-                            shortDebugString(messageBatch),
-                            toInstant(previousBatchLast.getTimestamp())
+                            "Found batch with less timestamp. Last timestamp from previous batch: {}. Founded batch: {}",
+                            toInstant(previousBatchLast.getTimestamp()),
+                            shortDebugString(messageBatch)
                     );
                 }
                 return;

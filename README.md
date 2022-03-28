@@ -67,6 +67,7 @@ Please see more details about this feature via [link](https://github.com/th2-net
 ## 3.5.1
 
 + Added more detail into logs
++ Added checking for timestamp inside batch and between batches
 
 ## 3.5.0
 

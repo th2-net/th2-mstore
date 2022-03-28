@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -14,6 +14,7 @@
 package com.exactpro.th2.mstore;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
+import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
@@ -57,7 +58,6 @@ import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Timestamp;
-import com.google.protobuf.TimestampOrBuilder;
 
 abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
 
@@ -108,7 +108,11 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
     protected abstract AbstractMessageStore<T, M> createStore(CradleManager cradleManagerMock, MessageRouter<T> routerMock, MessageStoreConfiguration configuration);
 
-    protected abstract M createMessage(String session, Direction direction, long sequence);
+    protected M createMessage(String session, Direction direction, long sequence) {
+        return createMessage(session, direction, sequence, Instant.now());
+    }
+
+    protected abstract M createMessage(String session, Direction direction, long sequence, Instant timestamp);
 
     protected abstract long extractSize(M message);
 
@@ -123,18 +127,6 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
                 .setSequence(sequence)
                 .setConnectionId(ConnectionID.newBuilder().setSessionAlias(session).build())
                 .build();
-    }
-
-    protected Timestamp createTimestamp() {
-        Instant now = Instant.now();
-        return Timestamp.newBuilder()
-                .setSeconds(now.getEpochSecond())
-                .setNanos(now.getNano())
-                .build();
-    }
-
-    private static Instant from(TimestampOrBuilder timestamp) {
-        return Instant.ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos());
     }
 
     @SafeVarargs
@@ -162,11 +154,38 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
         @Test
         @DisplayName("Delivery with unordered sequences is not stored")
-        void testUnorderedDelivery() throws CradleStorageException {
-            M first = createMessage("test", Direction.FIRST, 1);
-            M second = createMessage("test", Direction.FIRST, 2);
+        void testUnorderedSequencesDelivery() throws CradleStorageException {
+            String alias = "test";
+            Direction direction = Direction.FIRST;
+            messageStore.handle(deliveryOf(
+                    createMessage(alias, direction, 2),
+                    createMessage(alias, direction, 1)
+            ));
+            verify(messageStore, never()).storeMessages(any(), any());
+        }
 
-            messageStore.handle(deliveryOf(second, first));
+        @Test
+        @DisplayName("Delivery with equal sequences is not stored")
+        void testEqualSequencesDelivery() throws CradleStorageException {
+            String alias = "test";
+            Direction direction = Direction.FIRST;
+            messageStore.handle(deliveryOf(
+                    createMessage(alias, direction, 1),
+                    createMessage(alias, direction, 1)
+            ));
+            verify(messageStore, never()).storeMessages(any(), any());
+        }
+
+        @Test
+        @DisplayName("Delivery with unordered timestamps is not stored")
+        void testUnorderedTimestampsDelivery() throws CradleStorageException {
+            String alias = "test";
+            Direction direction = Direction.FIRST;
+            Instant now = Instant.now();
+            messageStore.handle(deliveryOf(
+                    createMessage(alias, direction, 1, now),
+                    createMessage(alias, direction, 2, now.minusNanos(1)))
+            );
             verify(messageStore, never()).storeMessages(any(), any());
         }
 
@@ -191,13 +210,19 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         }
 
         @Test
-        @DisplayName("Duplicated delivery is ignored")
-        void testDuplicatedDelivery() {
-            M first = createMessage("test", Direction.FIRST, 1);
+        @DisplayName("Duplicated or less sequence delivery is ignored")
+        void testDuplicatedOrLessSequenceDelivery() {
+            String alias = "test";
+            Direction direction = Direction.FIRST;
+
+            M first = createMessage(alias, direction, 2);
             messageStore.handle(deliveryOf(first));
 
-            M duplicate = createMessage("test", Direction.FIRST, 1);
+            M duplicate = createMessage(alias, direction, 2);
             messageStore.handle(deliveryOf(duplicate));
+
+            M lessSequence = createMessage(alias, direction, 1);
+            messageStore.handle(deliveryOf(lessSequence));
 
             ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
             storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
@@ -205,8 +230,34 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
             StoredMessageBatch value = capture.getValue();
             assertNotNull(value);
-            assertStoredMessageBatch(value, "test", Direction.FIRST, 1);
-            assertEquals(from(extractTimestamp(first)), value.getLastTimestamp());
+            assertStoredMessageBatch(value, alias, direction, 1);
+            assertEquals(toInstant(extractTimestamp(first)), value.getLastTimestamp());
+        }
+
+        @Test
+        @DisplayName("Duplicated timestamp delivery isn't ignored but less timestamp is")
+        void testDuplicatedOrLessTimestampDelivery() {
+            String alias = "test";
+            Direction direction = Direction.FIRST;
+            Instant now = Instant.now();
+
+            M first = createMessage(alias, direction, 1, now);
+            messageStore.handle(deliveryOf(first));
+
+            M duplicate = createMessage(alias, direction, 2, now);
+            messageStore.handle(deliveryOf(duplicate));
+
+            M lessTimestamp = createMessage(alias, direction, 3, now.minusNanos(2));
+            messageStore.handle(deliveryOf(lessTimestamp));
+
+            ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
+            verify(cradleObjectsFactory, times(2 + 2/*invocations in SessionBatchHolder (init + reset)*/)).createMessageBatch();
+
+            StoredMessageBatch value = capture.getValue();
+            assertNotNull(value);
+            assertStoredMessageBatch(value, alias, direction, 2);
+            assertEquals(toInstant(extractTimestamp(duplicate)), value.getLastTimestamp());
         }
     }
 
@@ -274,6 +325,27 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             StoredMessageBatch value = capture.getValue();
             assertNotNull(value);
             assertStoredMessageBatch(value, "test", Direction.FIRST, 2);
+        }
+
+        @Test
+        @DisplayName("Delivery with messages with same timestamps for one session are stored")
+        void testDeliveryWithSameTimestamps() {
+            String alias = "test";
+            Direction direction = Direction.FIRST;
+            Instant now = Instant.now();
+            M first = createMessage(alias, direction, 1, now);
+            M second = createMessage(alias, direction, 2, now);
+
+            messageStore.handle(deliveryOf(first, second));
+
+            ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), capture.capture());
+            verify(cradleObjectsFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/)).createMessageBatch();
+
+            StoredMessageBatch value = capture.getValue();
+            assertNotNull(value);
+            assertStoredMessageBatch(value, alias, direction, 2);
+            assertEquals(toInstant(extractTimestamp(second)), value.getLastTimestamp());
         }
     }
 

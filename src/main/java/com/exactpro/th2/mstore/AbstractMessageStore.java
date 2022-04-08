@@ -15,7 +15,6 @@ package com.exactpro.th2.mstore;
 
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 import static com.exactpro.th2.mstore.SequenceToTimestamp.SEQUENCE_TO_TIMESTAMP_COMPARATOR;
-import static com.google.protobuf.TextFormat.shortDebugString;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.BinaryOperator.maxBy;
@@ -276,15 +275,21 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         });
     }
 
-    private static String formatStoredMessageBatch(StoredMessageBatch storedMessageBatch, boolean full) {
+    public static String formatStoredMessageBatch(StoredMessageBatch storedMessageBatch, boolean full) {
+        if (storedMessageBatch.getMessageCount() == 0) {
+            return "[]";
+        }
+
         ToStringBuilder builder = new ToStringBuilder(storedMessageBatch, NO_CLASS_NAME_STYLE)
                 .append("stream", storedMessageBatch.getStreamName())
                 .append("direction", storedMessageBatch.getId().getDirection())
-                .append("batch id", storedMessageBatch.getId().getIndex());
+                .append("batch id", storedMessageBatch.getId().getIndex())
+                .append("min timestamp", storedMessageBatch.getFirstMessage().getTimestamp())
+                .append("max timestamp", storedMessageBatch.getLastMessage().getTimestamp())
+                .append("size", storedMessageBatch.getBatchSize())
+                .append("count", storedMessageBatch.getMessageCount());
         if (full) {
-            builder.append("size", storedMessageBatch.getBatchSize())
-                    .append("count", storedMessageBatch.getMessageCount())
-                    .append("message sequences", storedMessageBatch.getMessages().stream()
+            builder.append("sequences", storedMessageBatch.getMessages().stream()
                             .map(StoredMessage::getId)
                             .map(StoredMessageId::getIndex)
                             .map(Objects::toString)
@@ -399,13 +404,15 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     protected abstract SessionKey createSessionKey(M message);
 
+    protected abstract String shortDebugString(T batch);
+
     protected static class SessionKey {
         private final String streamName;
         private final Direction direction;
 
         public SessionKey(String streamName, Direction direction) {
-            this.streamName = Objects.requireNonNull(streamName, "'Stream name' parameter");
-            this.direction = Objects.requireNonNull(direction, "'Direction' parameter");
+            this.streamName = requireNonNull(streamName, "'Stream name' parameter");
+            this.direction = requireNonNull(direction, "'Direction' parameter");
         }
 
         public String getStreamName() {
@@ -457,7 +464,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         private final SessionBatchHolder batchHolder;
 
         SessionData(Supplier<StoredMessageBatch> batchSupplier) {
-            batchHolder = new SessionBatchHolder(Objects.requireNonNull(batchSupplier, "'batchSupplier' cannot be null"));
+            batchHolder = new SessionBatchHolder(requireNonNull(batchSupplier, "'batchSupplier' cannot be null"));
         }
 
         public SequenceToTimestamp getAndUpdateLastSequenceToTimestamp(SequenceToTimestamp newLastSequenceToTimestamp) {

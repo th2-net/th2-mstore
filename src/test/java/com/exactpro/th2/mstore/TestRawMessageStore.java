@@ -13,9 +13,6 @@
 
 package com.exactpro.th2.mstore;
 
-import java.time.Instant;
-import java.util.List;
-
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.th2.common.grpc.Direction;
@@ -25,6 +22,9 @@ import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.Timestamp;
+
+import java.time.Instant;
+import java.util.List;
 
 import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 

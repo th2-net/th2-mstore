@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
+import com.google.protobuf.TextFormat;
 import org.jetbrains.annotations.NotNull;
 
 import com.exactpro.cradle.CradleManager;
@@ -31,6 +32,7 @@ import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 
+@Deprecated(since = "5.0.0")
 public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.PARSED)
             .map(QueueAttribute::toString)
@@ -76,5 +78,10 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     @Override
     protected List<Message> getMessages(MessageBatch delivery) {
         return delivery.getMessagesList();
+    }
+
+    @Override
+    protected String shortDebugString(MessageBatch batch) {
+        return TextFormat.shortDebugString(batch);
     }
 }

@@ -57,7 +57,7 @@ jar {
 dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
-    implementation 'com.exactpro.th2:common:3.33.0-th2-2401-2890-1851746377-SNAPSHOT'
+    implementation 'com.exactpro.th2:common:3.36.0'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 
@@ -81,7 +81,7 @@ application {
 applicationName = 'service'
 
 distTar {
-    archiveName "${applicationName}.tar"
+    archiveFileName.set("${applicationName}.tar")
 }
 
 dockerPrepare {

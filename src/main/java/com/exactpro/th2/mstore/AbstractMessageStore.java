@@ -306,7 +306,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
         SessionKey previousKey = null;
-        SequenceToTimestamp previousSequenceToTimestamp = new SequenceToTimestamp();
+        SequenceToTimestamp previousSequenceToTimestamp = SequenceToTimestamp.MIN;
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);
             SessionKey sessionKey = createSessionKey(message);
@@ -459,7 +459,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
     private static class SessionData {
-        private final AtomicReference<SequenceToTimestamp> lastSequenceToTimestamp = new AtomicReference<>(new SequenceToTimestamp());
+        private final AtomicReference<SequenceToTimestamp> lastSequenceToTimestamp = new AtomicReference<>(SequenceToTimestamp.MIN);
 
         private final SessionBatchHolder batchHolder;
 

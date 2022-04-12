@@ -36,7 +36,9 @@ public class SequenceToTimestamp {
     private final long sequence;
     private final Timestamp timestamp;
 
-    public SequenceToTimestamp() {
+    public static final SequenceToTimestamp MIN = new SequenceToTimestamp();
+
+    private SequenceToTimestamp() {
         this(Long.MIN_VALUE, toTimestamp(Instant.MIN));
     }
 

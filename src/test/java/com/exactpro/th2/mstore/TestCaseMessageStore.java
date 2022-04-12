@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -42,6 +42,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleObjectsFactory;
@@ -52,6 +54,7 @@ import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.ConnectionID;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.MessageID;
+import com.exactpro.th2.common.message.MessageUtils;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
@@ -60,6 +63,7 @@ import com.google.protobuf.Timestamp;
 import com.google.protobuf.TimestampOrBuilder;
 
 abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
+    private final Logger logger = LoggerFactory.getLogger(getClass());
 
     private static final int DRAIN_TIMEOUT = 1000;
     private static final long TEST_MESSAGE_BATCH_SIZE = 1024;
@@ -110,7 +114,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
     protected abstract M createMessage(String session, Direction direction, long sequence);
 
-    protected abstract long extractSize(M message);
+    protected abstract long extractSizeInBatch(M message);
 
     protected abstract T createDelivery(List<M> messages);
 
@@ -298,11 +302,28 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             assertStoredMessageBatch(value, "test", Direction.FIRST, 2);
         }
 
+        /**
+         * Message size calculation changed in Cradle, please see
+         * {@link com.exactpro.cradle.serialization.MessagesSizeCalculator#calculateMessageSizeInBatch(com.exactpro.cradle.messages.MessageToStore)}
+         * {@link com.exactpro.cradle.serialization.MessagesSizeCalculator#calculateMessageSize(com.exactpro.cradle.messages.MessageToStore)}
+         */
         @Test
         @DisplayName("Stores batch if cannot join because of messages size")
         void storesBatch() throws IOException {
-            long oneMessageSize = extractSize(createMessage("test", Direction.FIRST, 1));
+            M testMsg = createMessage("test", Direction.FIRST, 1);
+            if (logger.isInfoEnabled()) {
+                logger.info("Test message to measure size: {}", MessageUtils.toJson(testMsg));
+            }
+            long oneMessageSize = extractSizeInBatch(testMsg);
+            logger.info("Expected message size: {}", oneMessageSize);
             long maxMessagesInBatchCount = TEST_MESSAGE_BATCH_SIZE / oneMessageSize;
+            if (TEST_EVENT_BATCH_SIZE % oneMessageSize == 0) {
+                // sometimes the size of timestamp in the message is different
+                // and the batch's size is multiple of message size.
+                // In this case we need to decrease the total count of messages
+                maxMessagesInBatchCount -= 1;
+            }
+            logger.info("Expected messages in one batch: {}", maxMessagesInBatchCount);
             List<M> firstDelivery = LongStream.range(0, maxMessagesInBatchCount / 2)
                     .mapToObj(it -> createMessage("test", Direction.FIRST, it))
                     .collect(Collectors.toList());

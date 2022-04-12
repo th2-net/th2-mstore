@@ -13,8 +13,8 @@
 
 package com.exactpro.th2.mstore;
 
-import static com.exactpro.th2.common.metrics.CommonMetrics.setLiveness;
-import static com.exactpro.th2.common.metrics.CommonMetrics.setReadiness;
+import static com.exactpro.th2.common.metrics.CommonMetrics.LIVENESS_MONITOR;
+import static com.exactpro.th2.common.metrics.CommonMetrics.READINESS_MONITOR;
 
 import java.util.Deque;
 import java.util.concurrent.ConcurrentLinkedDeque;
@@ -88,13 +88,13 @@ public class MessageStore {
 
         configureShutdownHook(resources, lock, condition);
         try {
-            setLiveness(true);
+            LIVENESS_MONITOR.enable();
             CommonFactory factory = CommonFactory.createFromArguments(args);
             resources.add(factory);
             MessageStore store = new MessageStore(factory);
             resources.add(store::dispose);
             store.start();
-            setReadiness(true);
+            READINESS_MONITOR.enable();
             LOGGER.info("message store started");
             awaitShutdown(lock, condition);
         } catch (InterruptedException e) {
@@ -121,7 +121,7 @@ public class MessageStore {
             @Override
             public void run() {
                 LOGGER.info("Shutdown start");
-                setReadiness(false);
+                READINESS_MONITOR.disable();
                 try {
                     lock.lock();
                     condition.signalAll();
@@ -136,7 +136,7 @@ public class MessageStore {
                         LOGGER.error(e.getMessage(), e);
                     }
                 });
-                setLiveness(false);
+                LIVENESS_MONITOR.disable();
                 LOGGER.info("Shutdown end");
             }
         });

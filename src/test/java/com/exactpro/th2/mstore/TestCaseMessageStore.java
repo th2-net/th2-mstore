@@ -324,7 +324,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             messageStore.handle(createDelivery(secondDelivery));
 
             ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
-            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(2)), capture.capture());
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT * 2).times(2)), capture.capture());
             verify(cradleObjectsFactory, times(2 + 2/*invocations in SessionBatchHolder (init + reset)*/)).createMessageBatch();
 
             List<StoredMessageBatch> value = capture.getAllValues();

@@ -23,7 +23,7 @@ import com.google.protobuf.Timestamp;
 import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 import static java.util.Objects.requireNonNull;
 
-public class SequenceToTimestamp {
+public class SequenceToTimestamp implements Comparable<SequenceToTimestamp> {
     // TODO move to common? the same is needed for books/pages in estore
     private static final Comparator<Timestamp> TIMESTAMP_COMPARATOR = Comparator
             .comparingLong(Timestamp::getSeconds)
@@ -31,7 +31,7 @@ public class SequenceToTimestamp {
 
     public static final Comparator<SequenceToTimestamp> SEQUENCE_TO_TIMESTAMP_COMPARATOR = Comparator
             .comparingLong(SequenceToTimestamp::getSequence)
-            .thenComparing((s1, s2) -> TIMESTAMP_COMPARATOR.compare(s1.getTimestamp(), s2.getTimestamp()));
+            .thenComparing(SequenceToTimestamp::getTimestamp, TIMESTAMP_COMPARATOR);
 
     private final long sequence;
     private final Timestamp timestamp;
@@ -64,5 +64,10 @@ public class SequenceToTimestamp {
     @NotNull
     public Timestamp getTimestamp() {
         return timestamp;
+    }
+
+    @Override
+    public int compareTo(@NotNull SequenceToTimestamp o) {
+        return SEQUENCE_TO_TIMESTAMP_COMPARATOR.compare(this, o);
     }
 }

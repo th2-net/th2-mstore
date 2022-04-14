@@ -18,6 +18,7 @@ import java.util.List;
 
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.serialization.MessagesSizeCalculator;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageBatch;
@@ -53,8 +54,8 @@ public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, M
     }
 
     @Override
-    protected long extractSize(Message message) {
-        return message.toByteArray().length;
+    protected long extractSizeInBatch(Message message) {
+        return MessagesSizeCalculator.calculateMessageSizeInBatch(ProtoUtil.toCradleMessage(message));
     }
 
     @Override

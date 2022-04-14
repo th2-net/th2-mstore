@@ -15,6 +15,7 @@ package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.serialization.MessagesSizeCalculator;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
@@ -52,8 +53,8 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
     }
 
     @Override
-    protected long extractSize(RawMessage message) {
-        return message.toByteArray().length;
+    protected long extractSizeInBatch(RawMessage message) {
+        return MessagesSizeCalculator.calculateMessageSizeInBatch(ProtoUtil.toCradleMessage(message));
     }
 
     @Override

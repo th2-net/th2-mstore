@@ -87,8 +87,14 @@ public class TestMessageStore {
         batch.addMessage(first);
         batch.addMessage(second);
 
-        assertEquals("[stream=test-stream,direction=FIRST,batch id=2,min timestamp=2022-04-08T08:15:55.328451976Z,max timestamp=2022-04-09T08:15:55.328451976Z,size=6,count=2,sequences=[2,3]]", formatStoredMessageBatch(batch, true));
-        assertEquals("[stream=test-stream,direction=FIRST,batch id=2,min timestamp=2022-04-08T08:15:55.328451976Z,max timestamp=2022-04-09T08:15:55.328451976Z,size=6,count=2]", formatStoredMessageBatch(batch, false));
+        assertEquals(
+                "[stream=test-stream,direction=FIRST,batch id=2,min timestamp=2022-04-08T08:15:55.328451976Z,max timestamp=2022-04-09T08:15:55.328451976Z,size=97,count=2,sequences=[2,3]]",
+                formatStoredMessageBatch(batch, true)
+        );
+        assertEquals(
+                "[stream=test-stream,direction=FIRST,batch id=2,min timestamp=2022-04-08T08:15:55.328451976Z,max timestamp=2022-04-09T08:15:55.328451976Z,size=97,count=2]",
+                formatStoredMessageBatch(batch, false)
+        );
 
         StoredMessageBatch emptyBatch = new StoredMessageBatch();
 

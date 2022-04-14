@@ -27,28 +27,36 @@ import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 
+import java.util.Map;
+
 public class ProtoUtil {
     public static MessageToStore toCradleMessage(Message protoMessage) {
         MessageMetadata metadata = protoMessage.getMetadata();
         MessageID messageID = metadata.getId();
-        return new MessageToStoreBuilder()
+        var builder = new MessageToStoreBuilder()
                 .streamName(messageID.getConnectionId().getSessionAlias())
                 .content(protoMessage.toByteArray())
                 .timestamp(toInstant(metadata.getTimestamp()))
                 .direction(toCradleDirection(messageID.getDirection()))
-                .index(messageID.getSequence())
-                .build();
+                .index(messageID.getSequence());
+        addProperties(builder, protoMessage.getMetadata().getPropertiesMap());
+        return builder.build();
     }
 
     public static MessageToStore toCradleMessage(RawMessage protoRawMessage) {
         RawMessageMetadata metadata = protoRawMessage.getMetadata();
         MessageID messageID = metadata.getId();
-        return new MessageToStoreBuilder()
+        var builder = new MessageToStoreBuilder()
                 .streamName(messageID.getConnectionId().getSessionAlias())
                 .content(protoRawMessage.toByteArray())
                 .timestamp(toInstant(metadata.getTimestamp()))
                 .direction(toCradleDirection(messageID.getDirection()))
-                .index(messageID.getSequence())
-                .build();
+                .index(messageID.getSequence());
+        addProperties(builder, protoRawMessage.getMetadata().getPropertiesMap());
+        return builder.build();
+    }
+
+    private static void addProperties(MessageToStoreBuilder builder, Map<String, String> properties) {
+        properties.forEach(builder::metadata);
     }
 }

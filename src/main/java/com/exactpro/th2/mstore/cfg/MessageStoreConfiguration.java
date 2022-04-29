@@ -20,6 +20,8 @@ public class MessageStoreConfiguration {
     private static final long DEFAULT_DRAIN_INTERVAL = 1000L;
     private static final long DEFAULT_WAIT_TIMEOUT = 5000L;
 
+    private String group;
+
     @JsonProperty("drain-interval")
     @JsonPropertyDescription("Interval in milliseconds to drain all aggregated batches that are not stored yet")
     private long drainInterval = DEFAULT_DRAIN_INTERVAL;
@@ -27,6 +29,15 @@ public class MessageStoreConfiguration {
     @JsonProperty("termination-timeout")
     @JsonPropertyDescription("The timeout in milliseconds to await for the inner drain scheduler to finish all the tasks")
     private long terminationTimeout = DEFAULT_WAIT_TIMEOUT;
+
+    public String getGroup() {
+        return group;
+    }
+
+    public MessageStoreConfiguration setGroup(String group) {
+        this.group = group;
+        return this;
+    }
 
     public long getDrainInterval() {
         return drainInterval;

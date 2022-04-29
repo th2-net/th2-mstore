@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -44,12 +45,15 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
             .map(QueueAttribute::toString)
             .toArray(String[]::new);
 
+    private final String group;
+
     public RawMessageBatchStore(
             MessageRouter<RawMessageBatch> router,
             @NotNull CradleManager cradleManager,
             @NotNull MessageStoreConfiguration configuration
     ) {
         super(router, cradleManager, configuration);
+        group = Objects.requireNonNull(configuration.getGroup(), "group parameter is required");
     }
 
     @Override
@@ -59,7 +63,14 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
 
     @Override
     protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch) {
-        return cradleStorage.storeMessageBatchAsync(storedMessageBatch);
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        try {
+            cradleStorage.storeGroupedMessageBatch(storedMessageBatch, group);
+            future.complete(null);
+        } catch (IOException e) {
+            future.completeExceptionally(e);
+        }
+        return future;
     }
 
     @Override

@@ -25,7 +25,10 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.concurrent.TimeUnit;
 
+import static com.exactpro.cradle.messages.StoredMessageBatch.DEFAULT_MAX_BATCH_SIZE;
+import static com.exactpro.cradle.messages.StoredMessageBatch.DEFAULT_MAX_MESSAGE_BATCH_DURATION_SEC;
 import static com.exactpro.th2.mstore.AbstractMessageStore.formatStoredMessageBatch;
 import static com.exactpro.th2.mstore.RawMessageBatchStore.formatRawMessageBatch;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -83,7 +86,7 @@ public class TestMessageStore {
         first.setTimestamp(TIMESTAMP);
         first.setContent(new byte[] { 3, 1, 2 });
 
-        StoredMessageBatch batch = new StoredMessageBatch();
+        StoredMessageBatch batch = new StoredMessageBatch(DEFAULT_MAX_BATCH_SIZE, TimeUnit.DAYS.toSeconds(2));
         batch.addMessage(first);
         batch.addMessage(second);
 

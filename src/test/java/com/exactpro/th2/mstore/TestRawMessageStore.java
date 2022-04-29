@@ -29,9 +29,12 @@ import java.util.List;
 
 import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 
+import org.junit.jupiter.api.Disabled;
+
+@Disabled("temporal for group tests")
 public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, RawMessage> {
     TestRawMessageStore() {
-        super(CradleStorage::storeMessageBatchAsync);
+        super((cradleStorage, batch) -> cradleStorage.storeMessageBatchAsync(batch));
     }
 
     @Override

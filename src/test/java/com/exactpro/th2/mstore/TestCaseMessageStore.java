@@ -87,7 +87,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
     @BeforeEach
     void setUp() throws CradleStorageException, IOException {
-        cradleEntitiesFactory = spy(new CradleEntitiesFactory(TEST_MESSAGE_BATCH_SIZE, TEST_EVENT_BATCH_SIZE));
+        cradleEntitiesFactory = spy(new CradleEntitiesFactory(TEST_MESSAGE_BATCH_SIZE, CradleStorage.DEFAULT_MAX_MESSAGE_BATCH_DURATION_LIMIT_SECONDS, TEST_EVENT_BATCH_SIZE));
 
         when(storageMock.getEntitiesFactory()).thenReturn(cradleEntitiesFactory);
         when(storageMock.storeMessageBatchAsync(any(MessageBatchToStore.class))).thenReturn(completableFuture);

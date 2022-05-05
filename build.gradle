@@ -23,6 +23,7 @@ repositories {
     }
 
     mavenCentral()
+    mavenLocal()
     
     maven {
         name 'Sonatype_snapshots'
@@ -57,7 +58,7 @@ jar {
 dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
-    implementation 'com.exactpro.th2:common:3.36.0'
+    implementation 'com.exactpro.th2:common:3.38.0'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 

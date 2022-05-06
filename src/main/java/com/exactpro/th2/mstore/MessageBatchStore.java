@@ -52,7 +52,7 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     }
 
     @Override
-    protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch) {
+    protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch, String sessionGroup) {
         return cradleStorage.storeProcessedMessageBatchAsync(storedMessageBatch);
     }
 
@@ -67,7 +67,10 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     @Override
     protected SessionKey createSessionKey(Message message) {
         MessageID messageID = message.getMetadata().getId();
-        return new SessionKey(messageID.getConnectionId().getSessionAlias(), toCradleDirection(messageID.getDirection()));
+        String sessionAlias = messageID.getConnectionId().getSessionAlias();
+        String sessionGroup = messageID.getConnectionId().getSessionGroup();
+        sessionGroup = (sessionGroup == null || sessionGroup.isEmpty()) ? sessionAlias : sessionGroup;
+        return new SessionKey(sessionAlias, sessionGroup, toCradleDirection(messageID.getDirection()));
     }
 
     @Override

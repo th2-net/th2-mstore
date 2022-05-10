@@ -40,11 +40,11 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
     }
 
     @Override
-    protected RawMessage createMessage(String session, Direction direction, long sequence, Instant timestamp) {
+    protected RawMessage createMessage(String session, String group, Direction direction, long sequence, Instant timestamp) {
         return RawMessage.newBuilder()
                 .setMetadata(
                         RawMessageMetadata.newBuilder()
-                                .setId(createMessageId(session, direction, sequence))
+                                .setId(createMessageId(session, group, direction, sequence))
                                 .setTimestamp(toTimestamp(timestamp))
                                 .build()
                 )

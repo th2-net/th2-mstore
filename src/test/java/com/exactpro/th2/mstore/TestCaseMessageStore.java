@@ -113,10 +113,10 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     protected abstract AbstractMessageStore<T, M> createStore(CradleManager cradleManagerMock, MessageRouter<T> routerMock, MessageStoreConfiguration configuration);
 
     protected M createMessage(String session, Direction direction, long sequence) {
-        return createMessage(session, direction, sequence, Instant.now());
+        return createMessage(session, null, direction, sequence, Instant.now());
     }
 
-    protected abstract M createMessage(String session, Direction direction, long sequence, Instant timestamp);
+    protected abstract M createMessage(String session, String group, Direction direction, long sequence, Instant timestamp);
 
     protected abstract long extractSizeInBatch(M message);
 
@@ -125,11 +125,16 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     protected abstract Timestamp extractTimestamp(M message);
 
     @NotNull
-    protected MessageID createMessageId(String session, Direction direction, long sequence) {
+    protected MessageID createMessageId(String session, String group, Direction direction, long sequence) {
+
+        ConnectionID.Builder connectionIdBuilder = ConnectionID.newBuilder().setSessionAlias(session);
+        if (group != null)
+            connectionIdBuilder.setSessionGroup(group);
+
         return MessageID.newBuilder()
                 .setDirection(direction)
                 .setSequence(sequence)
-                .setConnectionId(ConnectionID.newBuilder().setSessionAlias(session).build())
+                .setConnectionId(connectionIdBuilder.build())
                 .build();
     }
 
@@ -187,8 +192,8 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             Direction direction = Direction.FIRST;
             Instant now = Instant.now();
             messageStore.handle(deliveryOf(
-                    createMessage(alias, direction, 1, now),
-                    createMessage(alias, direction, 2, now.minusNanos(1)))
+                    createMessage(alias, null, direction, 1, now),
+                    createMessage(alias, null, direction, 2, now.minusNanos(1)))
             );
             verify(messageStore, never()).storeMessages(any(), any());
         }
@@ -245,13 +250,13 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             Direction direction = Direction.FIRST;
             Instant now = Instant.now();
 
-            M first = createMessage(alias, direction, 1, now);
+            M first = createMessage(alias, null, direction, 1, now);
             messageStore.handle(deliveryOf(first));
 
-            M duplicate = createMessage(alias, direction, 2, now);
+            M duplicate = createMessage(alias, null, direction, 2, now);
             messageStore.handle(deliveryOf(duplicate));
 
-            M lessTimestamp = createMessage(alias, direction, 3, now.minusNanos(2));
+            M lessTimestamp = createMessage(alias, null, direction, 3, now.minusNanos(2));
             messageStore.handle(deliveryOf(lessTimestamp));
 
             ArgumentCaptor<StoredMessageBatch> capture = ArgumentCaptor.forClass(StoredMessageBatch.class);
@@ -340,8 +345,8 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             String alias = "test";
             Direction direction = Direction.FIRST;
             Instant now = Instant.now();
-            M first = createMessage(alias, direction, 1, now);
-            M second = createMessage(alias, direction, 2, now);
+            M first = createMessage(alias, null, direction, 1, now);
+            M second = createMessage(alias, null, direction, 2, now);
 
             messageStore.handle(deliveryOf(first, second));
 

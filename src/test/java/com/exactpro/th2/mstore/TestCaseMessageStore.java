@@ -15,8 +15,7 @@ package com.exactpro.th2.mstore;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -26,7 +25,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -289,19 +287,34 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             int invocations = 2 + 2/*two sessions*/ * 2 /*invocations in SessionBatchHolder (init + reset)*/;
             verify(cradleObjectsFactory, times(invocations)).createMessageBatch();
 
-            List<StoredMessageBatch> value = batchCapture.getAllValues();
-            assertNotNull(value);
-            assertEquals(2, value.size());
+            List<StoredMessageBatch> batchValues = batchCapture.getAllValues();
+            assertNotNull(batchValues);
+            assertEquals(2, batchValues.size());
 
-            StoredMessageBatch firstValue = value.stream()
-                    .filter(it -> it.getDirection() == toCradleDirection(Direction.FIRST))
-                    .findFirst().orElseThrow();
+            List<String> groupValues = groupCapture.getAllValues();
+            assertNotNull(groupValues);
+            assertEquals(2, groupValues.size());
+
+            // detect list items and messages correspondence
+            int id1 = -1, id2 = -1;
+            for (int i = 0; i < batchValues.size(); i++) {
+                StoredMessageBatch batch = batchValues.get(i);
+                if (batch.getStreamName().equals("testA"))
+                    id1 = i;
+                if (batch.getStreamName().equals("testB"))
+                    id2 = i;
+            }
+
+            assertNotEquals(id1, -1);
+            assertNotEquals(id2, -1);
+
+            StoredMessageBatch firstValue = batchValues.get(id1);
             assertStoredMessageBatch(firstValue, "testA", Direction.FIRST, 1);
+            assertEquals("testA", groupValues.get(id1));
 
-            StoredMessageBatch secondValue = value.stream()
-                    .filter(it -> it.getDirection() == toCradleDirection(Direction.SECOND))
-                    .findFirst().orElseThrow();
+            StoredMessageBatch secondValue = batchValues.get(id2);
             assertStoredMessageBatch(secondValue, "testB", Direction.SECOND, 1);
+            assertEquals("testB", groupValues.get(id2));
         }
 
         @Test
@@ -319,6 +332,28 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             StoredMessageBatch value = capture.getValue();
             assertNotNull(value);
             assertStoredMessageBatch(value, alias, Direction.FIRST, 1);
+        }
+
+        @Test
+        @DisplayName("Delivery with session group is stored normally")
+        void testSessionGroupMessageDelivery() {
+            String alias = "test";
+            String group = "group";
+            Instant timestamp = Instant.parse("2022-03-14T12:23:23.345Z");
+            M first = createMessage(alias, group, Direction.FIRST, 1, timestamp);
+
+            messageStore.handle(deliveryOf(first));
+
+            ArgumentCaptor<StoredMessageBatch> batchCapture = ArgumentCaptor.forClass(StoredMessageBatch.class);
+            ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), batchCapture.capture(), groupCapture.capture());
+            verify(cradleObjectsFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/)).createMessageBatch();
+
+            String groupValue = groupCapture.getValue();
+            assertEquals(group, groupValue);
+            StoredMessageBatch batchValue = batchCapture.getValue();
+            assertNotNull(batchValue);
+            assertStoredMessageBatch(batchValue, alias, Direction.FIRST, 1);
         }
 
         @Test

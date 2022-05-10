@@ -361,7 +361,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     class TestSeveralDeliveriesInOneSession {
         @Test
         @DisplayName("Delivery for the same session ara joined to one batch")
-        void joinsBatches() throws IOException {
+        void joinsBatches() {
             String alias = "test";
             M first = createMessage(alias, Direction.FIRST, 1);
             M second = createMessage(alias, Direction.FIRST, 2);
@@ -385,7 +385,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
          */
         @Test
         @DisplayName("Stores batch if cannot join because of messages size")
-        void storesBatch() throws IOException {
+        void storesBatch() {
             String alias = "test";
             M testMsg = createMessage(alias, Direction.FIRST, 1);
             if (logger.isInfoEnabled()) {

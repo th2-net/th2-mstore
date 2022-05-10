@@ -14,7 +14,6 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleManager;
-import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.serialization.MessagesSizeCalculator;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.RawMessage;

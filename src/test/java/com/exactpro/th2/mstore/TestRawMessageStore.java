@@ -31,7 +31,7 @@ import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 
 public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, RawMessage> {
     TestRawMessageStore() {
-        super(CradleStorage::storeMessageBatchAsync);
+        super((storage, batch, group) -> storage.storeGroupedMessageBatchAsync(batch, group));
     }
 
     @Override

@@ -159,7 +159,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     futuresToRemove.add(future);
                 } catch (TimeoutException | InterruptedException e) {
                     if (logger.isErrorEnabled()) {
-                        logger.error("{} - future related to {} batch can't be complited", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
+                        logger.error("{} - future related to {} batch can't be completed", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
                     }
                     boolean mayInterruptIfRunning = e instanceof InterruptedException;
                     future.cancel(mayInterruptIfRunning);
@@ -191,7 +191,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     new SessionData(cradleStorage.getObjectsFactory()::createMessageBatch));
             long prevLastSeq = sessionData.getAndUpdateSequence(lastSequence);
             if (prevLastSeq >= firstSequence) {
-                logger.error("Duplicated batch found: {}", shortDebugString(messageBatch));
+                logger.error("Duplicated batch of type {} found: {}", messageBatch.getClass(), formatOriginalBatch(messageBatch));
                 return;
             }
             storeMessages(messages, sessionData.getBatchHolder());
@@ -351,6 +351,13 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     protected abstract List<M> getMessages(T delivery);
 
     protected abstract MessageToStore convert(M originalMessage);
+
+    /**
+     * Returns a string that represents the batch in a concise way.
+     * @param originalBatch the batch to get a concise string from.
+     * @return the new String
+     */
+    protected abstract String formatOriginalBatch(T originalBatch);
 
     protected abstract CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch);
 

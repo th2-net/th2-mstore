@@ -191,7 +191,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     new SessionData(cradleStorage.getObjectsFactory()::createMessageBatch));
             long prevLastSeq = sessionData.getAndUpdateSequence(lastSequence);
             if (prevLastSeq >= firstSequence) {
-                logger.error("Duplicated batch of type {} found: {}", messageBatch.getClass(), formatOriginalBatch(messageBatch));
+                logger.error("Duplicated batch of type {} found. Previous last sequence: {}, current batch: {}",
+                        messageBatch.getClass(), prevLastSeq, formatOriginalBatch(messageBatch));
                 return;
             }
             storeMessages(messages, sessionData.getBatchHolder());

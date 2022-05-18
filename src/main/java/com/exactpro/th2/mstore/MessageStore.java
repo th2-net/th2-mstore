@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -33,24 +33,16 @@ public class MessageStore {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MessageStore.class);
 
-    private final MessageBatchStore parsedStore;
     private final RawMessageBatchStore rawStore;
     private final CradleManager cradleManager;
 
     public MessageStore(AbstractCommonFactory factory) {
         cradleManager = factory.getCradleManager();
         MessageStoreConfiguration configuration = factory.getCustomConfiguration(MessageStoreConfiguration.class);
-        parsedStore = new MessageBatchStore(factory.getMessageRouterParsedBatch(), cradleManager, configuration);
         rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(), cradleManager, configuration);
     }
 
     public void start() {
-        try {
-            parsedStore.start();
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot start storage for parsed messages", e);
-        }
-
         try {
             rawStore.start();
             LOGGER.info("Message store start successfully");
@@ -60,12 +52,6 @@ public class MessageStore {
     }
 
     public void dispose() {
-        try {
-            parsedStore.dispose();
-        } catch (Exception e) {
-            LOGGER.error("Cannot dispose storage for parsed messages", e);
-        }
-
         try {
             rawStore.dispose();
         } catch (Exception e) {
@@ -97,7 +83,7 @@ public class MessageStore {
             LOGGER.info("message store started");
             awaitShutdown(lock, condition);
         } catch (InterruptedException e) {
-            LOGGER.info("The main thread interupted", e);
+            LOGGER.info("The main thread interrupted", e);
         } catch (Exception e) {
             LOGGER.error("Fatal error: {}", e.getMessage(), e);
             System.exit(1);
@@ -107,9 +93,9 @@ public class MessageStore {
     private static void awaitShutdown(ReentrantLock lock, Condition condition) throws InterruptedException {
         try {
             lock.lock();
-            LOGGER.info("Wait shutdown");
+            LOGGER.info("Waiting to shutdown");
             condition.await();
-            LOGGER.info("App shutdowned");
+            LOGGER.info("App shutdown");
         } finally {
             lock.unlock();
         }

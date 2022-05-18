@@ -376,6 +376,47 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         }
     }
 
+    @Nested
+    @DisplayName("Deliveries for different groups")
+    class TestDeliveriesForDifferentGroups {
+        @Test
+        @DisplayName("Deliveries for different groups are stored separately")
+        void separateBatches() throws IOException, CradleStorageException {
+            String bookName = bookName(random.nextInt());
+            M first = createMessage("testA", "group1", Direction.FIRST, 1, bookName);
+            M second = createMessage("testB", "group2", Direction.FIRST, 2, bookName);
+
+            messageStore.handle(deliveryOf(first));
+            messageStore.handle(deliveryOf(second));
+
+            ArgumentCaptor<MessageBatchToStore> batchCapture = ArgumentCaptor.forClass(MessageBatchToStore.class);
+            ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(2)), batchCapture.capture(), groupCapture.capture());
+            verify(cradleEntitiesFactory, times(2 + 4/*invocations in SessionBatchHolder (init + reset)*/)).messageBatch();
+
+            List<MessageBatchToStore> batchValues = batchCapture.getAllValues();
+            assertNotNull(batchValues);
+            assertEquals(2, batchValues.size());
+
+            List<String> groupValues = groupCapture.getAllValues();
+            assertNotNull(groupValues);
+            assertEquals(2, groupValues.size());
+
+            for (int i = 0; i < groupValues.size(); i++) {
+                String group = groupValues.get(i);
+                MessageBatchToStore batch = batchValues.get(i);
+                if (group.equals("group1")) {
+                    assertMessageBatchToStore(batch, bookName, "testA", Direction.FIRST, 1);
+                    assertEquals(1, batch.getId().getSequence());
+                }
+                if (group.equals("group2")) {
+                    assertMessageBatchToStore(batch, bookName, "testB", Direction.FIRST, 1);
+                    assertEquals(2, batch.getId().getSequence());
+                }
+            }
+        }
+    }
+
     @Test
     @DisplayName("Close message store when feature is completed")
     void testCompletedFutureCompleted() throws InterruptedException, ExecutionException, TimeoutException {

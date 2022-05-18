@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2021-2022 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ import com.exactpro.cradle.BookId;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.MessageToStoreBuilder;
 import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 
@@ -28,13 +27,6 @@ import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 
 public class ProtoUtil {
-    public static MessageToStore toCradleMessage(Message protoMessage) throws CradleStorageException {
-        return createMessageToStore(
-                protoMessage.getMetadata().getId(),
-                protoMessage.toByteArray()
-        );
-    }
-
     public static MessageToStore toCradleMessage(RawMessage protoRawMessage) throws CradleStorageException {
         return createMessageToStore(
                 protoRawMessage.getMetadata().getId(),

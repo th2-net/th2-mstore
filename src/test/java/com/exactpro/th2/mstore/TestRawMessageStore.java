@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -13,11 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
-import java.time.Instant;
-import java.util.List;
-
 import com.exactpro.cradle.CradleManager;
-import com.exactpro.cradle.CradleStorage;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
@@ -26,9 +22,12 @@ import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.Timestamp;
 
+import java.time.Instant;
+import java.util.List;
+
 public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, RawMessage> {
     TestRawMessageStore() {
-        super(CradleStorage::storeMessageBatchAsync);
+        super((storage, batch, group) -> storage.storeGroupedMessageBatchAsync(batch, group));
     }
 
     @Override
@@ -41,11 +40,11 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
     }
 
     @Override
-    protected RawMessage createMessage(String sessionAlias, Direction direction, long sequence, String bookName) {
+    protected RawMessage createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, String bookName) {
         return RawMessage.newBuilder()
                 .setMetadata(
                         RawMessageMetadata.newBuilder()
-                                .setId(createMessageId(Instant.now(), sessionAlias, direction, sequence, bookName))
+                                .setId(createMessageId(Instant.now(), sessionAlias, sessionGroup, direction, sequence, bookName))
                                 .build()
                 )
                 .build();

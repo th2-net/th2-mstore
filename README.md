@@ -7,6 +7,7 @@ Users must mark a pin that produces raw messages in conn, read and hand boxes vi
 Raw message is a base entity of th2. All incoming / outgoing data is stored in this format
 Every raw message contains important parts:
 * session alias - unique identifier of business session.
+* session group - group id for this session
 * direction - direction of message stream.
 * sequence number - incremental identifier.
 * data - byte representation of raw message 

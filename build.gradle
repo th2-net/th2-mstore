@@ -59,6 +59,7 @@ dependencies {
 
     implementation 'com.exactpro.th2:common:4.0.0-th2-2150-books-pages-2384165845-SNAPSHOT'
 
+
     implementation 'com.google.protobuf:protobuf-java-util'
 
     implementation "org.jetbrains:annotations"

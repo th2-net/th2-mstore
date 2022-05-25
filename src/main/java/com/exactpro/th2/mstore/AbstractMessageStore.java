@@ -373,9 +373,11 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
         public SessionKey(MessageID messageID) {
             this.sessionAlias = Objects.requireNonNull(messageID.getConnectionId().getSessionAlias(), "'Session alias' parameter");
-            this.sessionGroup = requireNonNull(messageID.getConnectionId().getSessionGroup(), "'Session group' parameter");
             this.direction = Objects.requireNonNull(toCradleDirection(messageID.getDirection()), "'Direction' parameter");
             this.bookName = Objects.requireNonNull(messageID.getBookName(), "'Book name' parameter");
+
+            String group = messageID.getConnectionId().getSessionGroup();
+            this.sessionGroup = (group == null || group.isEmpty()) ? this.sessionAlias : group;
         }
 
         @Override

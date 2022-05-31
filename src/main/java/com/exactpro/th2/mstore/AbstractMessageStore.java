@@ -180,6 +180,11 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         try {
             verifyBatch(messageBatch);
             List<M> messages = getMessages(messageBatch);
+
+            if (logger.isTraceEnabled()) {
+                logger.trace("Message batch received: {} messages, {} bytes", messages.size(), messageBatch.getSerializedSize());
+            }
+
             if (messages.isEmpty()) {
                 if (logger.isWarnEnabled()) {
                     logger.warn("Empty batch has been received {}", shortDebugString(messageBatch));

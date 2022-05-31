@@ -86,7 +86,7 @@ public class MessageStore {
         ReentrantLock lock = new ReentrantLock();
         Condition condition = lock.newCondition();
 
-        LOGGER.trace("Trace logging level is enabled");
+        LOGGER.info("Logging levels: trace = {}, debug = {}, info = {}", LOGGER.isTraceEnabled(), LOGGER.isDebugEnabled(), LOGGER.isInfoEnabled());
 
         configureShutdownHook(resources, lock, condition);
         try {

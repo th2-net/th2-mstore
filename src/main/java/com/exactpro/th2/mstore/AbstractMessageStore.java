@@ -181,9 +181,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             verifyBatch(messageBatch);
             List<M> messages = getMessages(messageBatch);
 
-            if (logger.isTraceEnabled()) {
-                logger.trace("Message batch received: {} messages, {} bytes", messages.size(), messageBatch.getSerializedSize());
-            }
+            logger.info("Message batch received: {} messages, {} bytes", messages.size(), messageBatch.getSerializedSize());
 
             if (messages.isEmpty()) {
                 if (logger.isWarnEnabled()) {

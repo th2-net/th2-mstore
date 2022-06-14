@@ -19,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.exactpro.cradle.messages.*;
 import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.common.message.MessageUtils;
 import com.google.protobuf.ByteString;
@@ -27,8 +28,6 @@ import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.jetbrains.annotations.NotNull;
 
 import com.exactpro.cradle.CradleManager;
-import com.exactpro.cradle.messages.MessageToStore;
-import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
@@ -59,7 +58,7 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
 
     @Override
     protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch, String sessionGroup) {
-        return cradleStorage.storeGroupedMessageBatchAsync(storedMessageBatch, sessionGroup);
+        return cradleStorage.storeGroupedMessageBatchAsync(new StoredGroupMessageBatch(storedMessageBatch), sessionGroup);
     }
 
     @Override

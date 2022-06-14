@@ -14,6 +14,7 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.messages.StoredGroupMessageBatch;
 import com.exactpro.cradle.serialization.MessagesSizeCalculator;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.RawMessage;
@@ -30,7 +31,14 @@ import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 
 public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, RawMessage> {
     TestRawMessageStore() {
-        super((storage, batch, group) -> storage.storeGroupedMessageBatchAsync(batch, group));
+        super((storage, batch, group) -> {
+            StoredGroupMessageBatch groupMessageBatch = null;
+
+            if (batch != null) {
+                groupMessageBatch = new StoredGroupMessageBatch(batch);
+            }
+            return storage.storeGroupedMessageBatchAsync(groupMessageBatch, group);
+        });
     }
 
     @Override

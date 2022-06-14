@@ -17,6 +17,7 @@ targetCompatibility = 11
 
 
 repositories {
+    mavenLocal()
     maven {
         name 'MavenLocal'
         url sharedDir
@@ -57,7 +58,7 @@ jar {
 dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
-    implementation 'com.exactpro.th2:common:4.0.0-th2-2150-books-pages-2338617291-SNAPSHOT'
+    implementation 'com.exactpro.th2:common:4.0.0'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 

@@ -27,7 +27,7 @@ import java.util.List;
 
 public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, RawMessage> {
     TestRawMessageStore() {
-        super((storage, batch, group) -> storage.storeGroupedMessageBatchAsync(batch, group));
+        super((storage, batch) -> storage.storeGroupedMessageBatchAsync(batch));
     }
 
     @Override

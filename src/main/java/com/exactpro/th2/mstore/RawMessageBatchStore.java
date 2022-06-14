@@ -14,6 +14,7 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.RawMessage;
@@ -47,8 +48,8 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
     }
 
     @Override
-    protected CompletableFuture<Void> store(BatchData batchData) throws CradleStorageException, IOException {
-        return cradleStorage.storeGroupedMessageBatchAsync(batchData.batch, batchData.sessionGroup);
+    protected CompletableFuture<Void> store(GroupedMessageBatchToStore batch) throws CradleStorageException, IOException {
+        return cradleStorage.storeGroupedMessageBatchAsync(batch);
     }
 
     @Override

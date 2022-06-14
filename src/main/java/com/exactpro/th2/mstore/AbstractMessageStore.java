@@ -13,31 +13,19 @@
 
 package com.exactpro.th2.mstore;
 
-import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
-import static com.google.protobuf.TextFormat.shortDebugString;
-import static java.util.Objects.requireNonNull;
-import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
-
-import java.io.IOException;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
-
-import com.exactpro.cradle.messages.*;
+import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.Direction;
+import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.cradle.messages.MessageToStore;
+import com.exactpro.cradle.messages.StoredMessage;
+import com.exactpro.cradle.messages.StoredMessageId;
+import com.exactpro.cradle.utils.CradleStorageException;
+import com.exactpro.th2.common.grpc.MessageID;
+import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.SubscriberMonitor;
+import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
+import com.google.protobuf.GeneratedMessageV3;
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.commons.lang3.builder.ToStringBuilder;
@@ -45,24 +33,26 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.exactpro.cradle.CradleManager;
-import com.exactpro.cradle.CradleStorage;
-import com.exactpro.cradle.Direction;
-import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.grpc.MessageID;
-import com.exactpro.th2.common.schema.message.MessageRouter;
-import com.exactpro.th2.common.schema.message.SubscriberMonitor;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
-import com.google.protobuf.GeneratedMessageV3;
+import java.io.IOException;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+
+import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
+import static com.google.protobuf.TextFormat.shortDebugString;
+import static java.util.Objects.requireNonNull;
+import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
 public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
     private static final Logger logger = LoggerFactory.getLogger(AbstractMessageStore.class);
 
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final Map<SessionKey, SessionData> sessionToHolder = new ConcurrentHashMap<>();
+    private final Map<SessionKey, SessionData> sessionData = new ConcurrentHashMap<>();
+    private final Map<String, BatchHolder> batchHolder = new ConcurrentHashMap<>();
     private final MessageStoreConfiguration configuration;
-    private final Map<CompletableFuture<Void>, BatchData> asyncStoreFutures = new ConcurrentHashMap<>();
+    private final Map<CompletableFuture<Void>, GroupedMessageBatchToStore> asyncStoreFutures = new ConcurrentHashMap<>();
     private volatile ScheduledFuture<?> future;
     private final MessageRouter<T> router;
     private SubscriberMonitor monitor;
@@ -73,7 +63,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             @NotNull MessageStoreConfiguration configuration
     ) {
         this.router = requireNonNull(router, "Message router can't be null");
-        cradleStorage = requireNonNull(cradleManager.getStorage(), "Cradle storage can't be null");
+        this.cradleStorage = requireNonNull(cradleManager.getStorage(), "Cradle storage can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
     }
 
@@ -96,6 +86,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         future = drainExecutor.scheduleAtFixedRate(this::drainByScheduler, configuration.getDrainInterval(), configuration.getDrainInterval(), TimeUnit.MILLISECONDS);
         logger.info("Drain scheduler is started");
     }
+
 
     public void dispose() {
         if (monitor != null) {
@@ -140,6 +131,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         awaitFutures();
     }
 
+
     private void awaitFutures() {
         logger.debug("Waiting for futures completion");
         Collection<CompletableFuture<Void>> futuresToRemove = new HashSet<>();
@@ -175,6 +167,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
 
+
     public final void handle(T messageBatch) {
         try {
             verifyBatch(messageBatch);
@@ -185,93 +178,100 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                 }
                 return;
             }
-            M lastMessage = messages.get(messages.size() - 1);
-            long firstSequence = extractSequence(messages.get(0));
-            long lastSequence = extractSequence(lastMessage);
-            SessionData sessionData = sessionToHolder.computeIfAbsent(
-                    createSessionKey(lastMessage),
-                    sessionKey -> new SessionData(sessionKey, cradleStorage.getEntitiesFactory()::messageBatch));
-            long prevLastSeq = sessionData.getAndUpdateSequence(lastSequence);
-            if (prevLastSeq >= firstSequence) {
-                logger.error("Duplicated batch found: {}", shortDebugString(messageBatch));
-                return;
+
+            String sessionGroup = null;
+            for (M message: messages) {
+                long sequence = extractSequence(message);
+                SessionKey sessionKey = createSessionKey(message);
+
+                if (sessionGroup != null && !sessionGroup.equals(sessionKey.sessionGroup)) {
+                    logger.error("Batch contains mixed group messages", shortDebugString(messageBatch));
+                    return;
+                }
+                sessionGroup = sessionKey.sessionGroup;
+                SessionData sessionData = this.sessionData.computeIfAbsent(sessionKey, k -> new SessionData());
+
+                long prevSequence = sessionData.getAndUpdateSequence(sequence);
+                if (prevSequence >= sequence) {
+                    logger.error("Duplicated batch found: {}", shortDebugString(messageBatch));
+                    return;
+                }
+
             }
-            storeMessages(messages, sessionData);
+
+            storeMessages(messages, sessionGroup);
         } catch (Exception ex) {
             logger.error("Cannot handle the batch of type {}", messageBatch.getClass(), ex);
         }
     }
 
-    protected void storeMessages(List<M> messagesList, SessionData sessionData) throws CradleStorageException, IOException {
+
+    protected void storeMessages(List<M> messagesList, String sessionGroup) throws CradleStorageException, IOException {
         logger.debug("Process {} messages started", messagesList.size());
 
-        MessageBatchToStore messageBatchToStore = cradleStorage.getEntitiesFactory().messageBatch();
+        GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(sessionGroup);
         for (M message : messagesList) {
             MessageToStore messageToStore = convert(message);
-            messageBatchToStore.addMessage(messageToStore);
+            batch.addMessage(messageToStore);
         }
-        MessageBatchToStore holtBatch;
-        String sessionGroup = sessionData.getSessionKey().getSessionGroup();
-        SessionBatchHolder holder = sessionData.getBatchHolder();
+        GroupedMessageBatchToStore holtBatch;
+        BatchHolder holder = batchHolder.computeIfAbsent(sessionGroup,
+                k -> new BatchHolder(sessionGroup, () -> cradleStorage.getEntitiesFactory().groupedMessageBatch(sessionGroup)));
+
         synchronized (holder) {
-            if (holder.add(messageBatchToStore)) {
+            if (holder.add(batch)) {
                 if (logger.isDebugEnabled()) {
-                    logger.debug("Message Batch added to the holder: {}",
-                            formatMessageBatchToStore(new BatchData(messageBatchToStore, sessionGroup), true));
+                    logger.debug("Message Batch added to the holder: {}", formatMessageBatchToStore(batch, true));
                 }
                 return;
             }
-            holtBatch = holder.resetAndUpdate(messageBatchToStore);
+            holtBatch = holder.resetAndUpdate(batch);
         }
 
         if (holtBatch.isEmpty()) {
-            logger.debug("Holder for '{}' has been concurrently reset. Skip storing", sessionData.getSessionKey());
+            logger.debug("Holder for '{}' has been concurrently reset. Skip storing", sessionGroup);
         } else {
-            storeBatchAsync(new BatchData(holtBatch, sessionGroup));
+            storeBatchAsync(holtBatch);
         }
     }
 
 
-    private void storeBatchAsync(BatchData batchData) throws CradleStorageException, IOException {
-        CompletableFuture<Void> future = store(batchData);
-        asyncStoreFutures.put(future, batchData);
+    private void storeBatchAsync(GroupedMessageBatchToStore batch) throws CradleStorageException, IOException {
+        CompletableFuture<Void> future = store(batch);
+        asyncStoreFutures.put(future, batch);
         future.whenCompleteAsync((value, exception) -> {
             try {
                 if (exception == null) {
                     if (logger.isDebugEnabled()) {
                         logger.debug("{} - batch stored: {}", getClass().getSimpleName(),
-                                formatMessageBatchToStore(batchData, true));
+                                formatMessageBatchToStore(batch, true));
                     }
                 } else {
                     if (logger.isErrorEnabled()) {
                         logger.error("{} - failed storing batch: {}", getClass().getSimpleName(),
-                                formatMessageBatchToStore(batchData, true), exception);
+                                formatMessageBatchToStore(batch, true), exception);
                     }
                 }
             } finally {
                 if (asyncStoreFutures.remove(future) == null) {
                     if (logger.isWarnEnabled()) {
                         logger.warn("{} - future related to batch {} already removed", getClass().getSimpleName(),
-                                formatMessageBatchToStore(batchData, true));
+                                formatMessageBatchToStore(batch, true));
                     }
                 }
             }
         });
     }
 
-    private static String formatMessageBatchToStore(BatchData batchData, boolean full) {
-        MessageBatchToStore messageBatchToStore = batchData.batch;
-        StoredMessageId id = messageBatchToStore.getId();
-        ToStringBuilder builder = new ToStringBuilder(messageBatchToStore, NO_CLASS_NAME_STYLE)
-                .append("book name", id.getBookId().getName())
-                .append("session alias", id.getSessionAlias())
-                .append("session group", batchData.sessionGroup)
-                .append("direction", id.getDirection())
-                .append("batch id", id.getSequence());
+
+    private static String formatMessageBatchToStore(GroupedMessageBatchToStore batch, boolean full) {
+        ToStringBuilder builder = new ToStringBuilder(batch, NO_CLASS_NAME_STYLE)
+                .append("book name", batch.getBookId().getName())
+                .append("session group", batch.getGroup());
         if (full) {
-            builder.append("size", messageBatchToStore.getBatchSize())
-                    .append("count", messageBatchToStore.getMessageCount())
-                    .append("message sequences", messageBatchToStore.getMessages().stream()
+            builder.append("size", batch.getBatchSize())
+                    .append("count", batch.getMessageCount())
+                    .append("message sequences", batch.getMessages().stream()
                             .map(StoredMessage::getId)
                             .map(StoredMessageId::getSequence)
                             .map(Objects::toString)
@@ -334,14 +334,13 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
     private void drain(boolean force) {
-        sessionToHolder.forEach((key, sessionData) -> drainHolder(sessionData, force));
+        batchHolder.forEach((key, batchHodler) -> drainHolder(batchHodler, force));
     }
 
-    private void drainHolder(SessionData sessionData, boolean force) {
-        SessionKey sessionKey = sessionData.getSessionKey();
-        SessionBatchHolder holder = sessionData.getBatchHolder();
-        logger.trace("Drain holder for session {}; force: {}", sessionKey, force);
-        MessageBatchToStore batch;
+    private void drainHolder(BatchHolder holder, boolean force) {
+
+        logger.trace("Drain holder for session {}; force: {}", holder.getGroup(), force);
+        GroupedMessageBatchToStore batch;
         synchronized (holder) {
             if (!force && !holder.isReadyToReset(configuration.getDrainInterval())) {
                 return;
@@ -349,16 +348,16 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             batch = holder.reset();
         }
         if (batch.isEmpty()) {
-            logger.debug("Holder for stream: '{}' has been concurrently reset. Skip storing by scheduler", sessionKey);
+            logger.debug("Holder for group: '{}' has been concurrently reset. Skip storing by scheduler", holder.getGroup());
             return;
         }
-        BatchData batchData = new BatchData(batch, sessionKey.getSessionGroup());
+
         try {
-            storeBatchAsync(batchData);
+            storeBatchAsync(batch);
         } catch (Exception ex) {
             if (logger.isErrorEnabled()) {
-                logger.error("Cannot store batch for session {}: {}", sessionKey,
-                        formatMessageBatchToStore(batchData, false), ex);
+                logger.error("Cannot store batch for group {}: {}", holder.getGroup(),
+                        formatMessageBatchToStore(batch, false), ex);
             }
         }
     }
@@ -369,39 +368,25 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     protected abstract MessageToStore convert(M originalMessage) throws CradleStorageException;
 
-    protected abstract CompletableFuture<Void> store(BatchData batchData) throws CradleStorageException, IOException;
+    protected abstract CompletableFuture<Void> store(GroupedMessageBatchToStore batch) throws CradleStorageException, IOException;
 
     protected abstract long extractSequence(M message);
 
     protected abstract SessionKey createSessionKey(M message);
 
     protected static class SessionKey {
-        private final String sessionAlias;
-        private final String sessionGroup;
-        private final Direction direction;
-        private final String bookName;
+        public final String sessionAlias;
+        public final String sessionGroup;
+        public final Direction direction;
+        public final String bookName;
 
         public SessionKey(MessageID messageID) {
             this.sessionAlias = Objects.requireNonNull(messageID.getConnectionId().getSessionAlias(), "'Session alias' parameter");
-            this.sessionGroup = requireNonNull(messageID.getConnectionId().getSessionGroup(), "'Session group' parameter");
             this.direction = Objects.requireNonNull(toCradleDirection(messageID.getDirection()), "'Direction' parameter");
             this.bookName = Objects.requireNonNull(messageID.getBookName(), "'Book name' parameter");
-        }
 
-        public String getSessionAlias() {
-            return sessionAlias;
-        }
-
-        public String getSessionGroup() {
-            return sessionGroup;
-        }
-
-        public Direction getDirection() {
-            return direction;
-        }
-
-        public String getBookName() {
-            return bookName;
+            String group = messageID.getConnectionId().getSessionGroup();
+            this.sessionGroup = (group == null || group.isEmpty()) ? this.sessionAlias : group;
         }
 
         @Override
@@ -445,36 +430,15 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
 
-    public static class BatchData {
-        public final MessageBatchToStore batch;
-        public final String sessionGroup;
-        public BatchData(MessageBatchToStore holtBatch, String sessionGroup) {
-            this.batch = holtBatch;
-            this.sessionGroup = sessionGroup;
-        }
-    }
-
     static class SessionData {
+        //public final SessionBatchHolder batchHolder;
         private final AtomicLong lastSequence = new AtomicLong(Long.MIN_VALUE);
 
-        private final SessionBatchHolder batchHolder;
-        private final SessionKey sessionKey;
-
-        SessionData(SessionKey sessionKey, Supplier<MessageBatchToStore> batchSupplier) {
-            this.sessionKey = sessionKey;
-            this.batchHolder = new SessionBatchHolder(requireNonNull(batchSupplier, "'batchSupplier' cannot be null"));
+        SessionData() {
         }
 
         public long getAndUpdateSequence(long newLastSeq) {
             return lastSequence.getAndAccumulate(newLastSeq, Math::max);
-        }
-
-        public SessionKey getSessionKey() {
-            return sessionKey;
-        }
-
-        public SessionBatchHolder getBatchHolder() {
-            return batchHolder;
         }
     }
 }

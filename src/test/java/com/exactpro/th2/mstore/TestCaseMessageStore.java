@@ -13,39 +13,11 @@
 
 package com.exactpro.th2.mstore;
 
-import static com.exactpro.cradle.serialization.MessagesSizeCalculator.MESSAGE_LENGTH_IN_BATCH;
-import static com.exactpro.cradle.serialization.MessagesSizeCalculator.MESSAGE_SIZE_CONST_VALUE;
-import static com.exactpro.th2.common.event.EventUtils.toTimestamp;
-import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.timeout;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-import java.io.IOException;
-import java.time.Instant;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
-import java.util.stream.LongStream;
-
-import org.jetbrains.annotations.NotNull;
-import org.junit.jupiter.api.*;
-import org.mockito.ArgumentCaptor;
-
 import com.exactpro.cradle.CradleEntitiesFactory;
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
-import com.exactpro.cradle.messages.MessageBatchToStore;
+import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.ConnectionID;
 import com.exactpro.th2.common.grpc.Direction;
@@ -56,6 +28,24 @@ import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.TimestampOrBuilder;
+import org.jetbrains.annotations.NotNull;
+import org.junit.jupiter.api.*;
+import org.mockito.ArgumentCaptor;
+
+import java.io.IOException;
+import java.time.Instant;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+import static com.exactpro.th2.common.event.EventUtils.toTimestamp;
+import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
     private static final int DRAIN_TIMEOUT = 1000;
@@ -82,10 +72,10 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
     @BeforeEach
     void setUp() throws CradleStorageException, IOException {
-        cradleEntitiesFactory = spy(new CradleEntitiesFactory(TEST_MESSAGE_BATCH_SIZE, CradleStorage.DEFAULT_MAX_MESSAGE_BATCH_DURATION_LIMIT_SECONDS, TEST_EVENT_BATCH_SIZE));
+        cradleEntitiesFactory = spy(new CradleEntitiesFactory(TEST_MESSAGE_BATCH_SIZE, TEST_EVENT_BATCH_SIZE));
 
         when(storageMock.getEntitiesFactory()).thenReturn(cradleEntitiesFactory);
-        when(storageMock.storeGroupedMessageBatchAsync(any(MessageBatchToStore.class), any(String.class))).thenReturn(completableFuture);
+        when(storageMock.storeGroupedMessageBatchAsync(any(GroupedMessageBatchToStore.class))).thenReturn(completableFuture);
 
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         when(routerMock.subscribeAll(any(), any())).thenReturn(mock(SubscriberMonitor.class));
@@ -135,10 +125,15 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         return createDelivery(List.of(messages));
     }
 
-    private static void assertMessageBatchToStore(MessageBatchToStore batch, String bookName, String sessionAlias, Direction direction, int count) {
-        assertEquals(bookName, batch.getId().getBookId().getName());
-        assertEquals(sessionAlias, batch.getSessionAlias());
-        assertEquals(toCradleDirection(direction), batch.getDirection());
+    private static void assertMessageToStore(StoredMessage message, String bookName, String sessionAlias, Direction direction) {
+        assertEquals(bookName, message.getBookId().getName());
+        assertEquals(sessionAlias, message.getSessionAlias());
+        assertEquals(toCradleDirection(direction), message.getDirection());
+    }
+
+    private static void assertMessageBatchToStore(GroupedMessageBatchToStore batch, String bookName, String groupName, int count) {
+        assertEquals(bookName, batch.getBookId().getName());
+        assertEquals(groupName, batch.getGroup());
         assertEquals(count, batch.getMessageCount());
     }
 
@@ -215,19 +210,18 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             M duplicate = createMessage("test", "group", Direction.FIRST, 1, bookName);
             messageStore.handle(deliveryOf(duplicate));
 
-            ArgumentCaptor<MessageBatchToStore> batchCapture = ArgumentCaptor.forClass(MessageBatchToStore.class);
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), batchCapture.capture(), groupCapture.capture());
-            verify(cradleEntitiesFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/)).messageBatch();
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), batchCapture.capture());
+            verify(cradleEntitiesFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/))
+                    .groupedMessageBatch(groupCapture.capture());
 
             assertEquals(1, batchCapture.getAllValues().size());
 
-            MessageBatchToStore batchValue = batchCapture.getValue();
+            GroupedMessageBatchToStore batchValue = batchCapture.getValue();
             assertNotNull(batchValue);
-            assertMessageBatchToStore(batchValue, bookName, "test", Direction.FIRST, 1);
+            assertMessageBatchToStore(batchValue, bookName, "group", 1);
             assertEquals(from(extractTimestamp(first)), batchValue.getLastTimestamp());
-
-            assertAllGroupValuesMatchTo(groupCapture, "group", 1);
         }
     }
 
@@ -246,27 +240,34 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             M duplicate = createMessage("testB", "group", Direction.SECOND, 1, bookName);
             messageStore.handle(deliveryOf(duplicate));
 
-            ArgumentCaptor<MessageBatchToStore> batchCapture = ArgumentCaptor.forClass(MessageBatchToStore.class);
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(2)), batchCapture.capture(), groupCapture.capture());
-            int invocations = 2 + 2/*two sessions*/ * 2 /*invocations in SessionBatchHolder (init + reset)*/;
-            verify(cradleEntitiesFactory, times(invocations)).messageBatch();
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(1)), batchCapture.capture());
+            int invocations = 2 +  2 /*invocations in SessionBatchHolder (init + reset)*/;
+            verify(cradleEntitiesFactory, times(invocations)).groupedMessageBatch(groupCapture.capture());
 
-            List<MessageBatchToStore> value = batchCapture.getAllValues();
+            List<GroupedMessageBatchToStore> value = batchCapture.getAllValues();
             assertNotNull(value);
-            assertEquals(2, value.size());
+            assertEquals(1, value.size());
 
-            MessageBatchToStore firstValue = value.stream()
-                    .filter(it -> it.getDirection() == toCradleDirection(Direction.FIRST))
-                    .findFirst().orElseThrow();
-            assertMessageBatchToStore(firstValue, bookName, "testA", Direction.FIRST, 1);
+            GroupedMessageBatchToStore batch = value.get(0);
 
-            MessageBatchToStore secondValue = value.stream()
-                    .filter(it -> it.getDirection() == toCradleDirection(Direction.SECOND))
-                    .findFirst().orElseThrow();
-            assertMessageBatchToStore(secondValue, bookName, "testB", Direction.SECOND, 1);
+            boolean a = false, b = false;
+            List<StoredMessage> messages = List.copyOf(batch.getMessages());
+            assertEquals(2, messages.size());
+            for (StoredMessage m : messages) {
+                if (m.getDirection() == toCradleDirection(Direction.FIRST)) {
+                    assertMessageToStore(m, bookName, "testA", Direction.FIRST);
+                    a = true;
+                } else {
+                    assertMessageToStore(m, bookName, "testB", Direction.SECOND);
+                    b = true;
+                }
+            }
+            assertEquals(true, a);
+            assertEquals(true, b);
 
-            assertAllGroupValuesMatchTo(groupCapture, "group", 2);
+            assertAllGroupValuesMatchTo(groupCapture, "group", 4);
         }
 
         @Test
@@ -277,16 +278,18 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
             messageStore.handle(deliveryOf(first));
 
-            ArgumentCaptor<MessageBatchToStore> batchCapture = ArgumentCaptor.forClass(MessageBatchToStore.class);
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), batchCapture.capture(), groupCapture.capture());
-            verify(cradleEntitiesFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/)).messageBatch();
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), batchCapture.capture());
+            verify(cradleEntitiesFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/))
+                    .groupedMessageBatch(groupCapture.capture());
 
-            MessageBatchToStore value = batchCapture.getValue();
+            GroupedMessageBatchToStore value = batchCapture.getValue();
             assertNotNull(value);
-            assertMessageBatchToStore(value, bookName, "test", Direction.FIRST, 1);
+            assertEquals(1, value.getMessageCount());
+            assertMessageToStore(List.copyOf(value.getMessages()).get(0), bookName, "test", Direction.FIRST);
 
-            assertAllGroupValuesMatchTo(groupCapture, "group", 1);
+            assertAllGroupValuesMatchTo(groupCapture, "group", 3);
         }
 
         @Test
@@ -298,16 +301,20 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
             messageStore.handle(deliveryOf(first, second));
 
-            ArgumentCaptor<MessageBatchToStore> batchCapture = ArgumentCaptor.forClass(MessageBatchToStore.class);
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), batchCapture.capture(), groupCapture.capture());
-            verify(cradleEntitiesFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/)).messageBatch();
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), batchCapture.capture());
+            verify(cradleEntitiesFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/))
+                    .groupedMessageBatch(groupCapture.capture());
 
-            MessageBatchToStore value = batchCapture.getValue();
+            GroupedMessageBatchToStore value = batchCapture.getValue();
             assertNotNull(value);
-            assertMessageBatchToStore(value, bookName, "test", Direction.FIRST, 2);
+            assertEquals(2, value.getMessageCount());
+            List<StoredMessage> messages = List.copyOf(value.getMessages());
+            assertMessageToStore(messages.get(0), bookName, "test", Direction.FIRST);
+            assertMessageToStore(messages.get(1), bookName, "test", Direction.FIRST);
 
-            assertAllGroupValuesMatchTo(groupCapture, "group", 1);
+            assertAllGroupValuesMatchTo(groupCapture, "group", 3);
         }
     }
 
@@ -324,56 +331,22 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             messageStore.handle(deliveryOf(first));
             messageStore.handle(deliveryOf(second));
 
-            ArgumentCaptor<MessageBatchToStore> batchCapture = ArgumentCaptor.forClass(MessageBatchToStore.class);
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), batchCapture.capture(), groupCapture.capture());
-            verify(cradleEntitiesFactory, times(2 + 2/*invocations in SessionBatchHolder (init + reset)*/)).messageBatch();
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT)), batchCapture.capture());
+            verify(cradleEntitiesFactory, times(2 + 2/*invocations in SessionBatchHolder (init + reset)*/))
+                    .groupedMessageBatch(groupCapture.capture());
 
-            MessageBatchToStore value = batchCapture.getValue();
+            GroupedMessageBatchToStore value = batchCapture.getValue();
             assertNotNull(value);
-            assertMessageBatchToStore(value, bookName, "test", Direction.FIRST, 2);
+            assertEquals(2, value.getMessageCount());
+            List<StoredMessage> messages = List.copyOf(value.getMessages());
+            assertMessageToStore(messages.get(0), bookName, "test", Direction.FIRST);
+            assertMessageToStore(messages.get(1), bookName, "test", Direction.FIRST);
 
-            assertAllGroupValuesMatchTo(groupCapture, "group", 1);
+            assertAllGroupValuesMatchTo(groupCapture, "group", 4);
         }
 
-        /**
-         * Message size calculation changed in Cradle, please see
-         * {@link com.exactpro.cradle.serialization.MessagesSizeCalculator#calculateMessageSizeInBatch(com.exactpro.cradle.messages.CradleMessage)}
-         * {@link com.exactpro.cradle.serialization.MessagesSizeCalculator#calculateMessageSize(com.exactpro.cradle.messages.CradleMessage)}
-         */
-        @Test
-        @DisplayName("Stores batch if cannot join because of messages size")
-        void storesBatch() throws IOException, CradleStorageException {
-            String bookName = bookName(random.nextInt());
-            long oneMessageSize = extractSize(createMessage("test", "group", Direction.FIRST, 1, bookName))
-                    + MESSAGE_LENGTH_IN_BATCH
-                    + MESSAGE_SIZE_CONST_VALUE;
-            long maxMessagesInBatchCount = TEST_MESSAGE_BATCH_SIZE / oneMessageSize;
-            List<M> firstDelivery = LongStream.range(0, maxMessagesInBatchCount / 2)
-                    .mapToObj(it -> createMessage("test", "group", Direction.FIRST, it, bookName))
-                    .collect(Collectors.toList());
-
-            List<M> secondDelivery = LongStream.range(maxMessagesInBatchCount / 2, maxMessagesInBatchCount + maxMessagesInBatchCount / 2)
-                    .mapToObj(it -> createMessage("test", "group", Direction.FIRST, it, bookName))
-                    .collect(Collectors.toList());
-
-            messageStore.handle(createDelivery(firstDelivery));
-            messageStore.handle(createDelivery(secondDelivery));
-
-            ArgumentCaptor<MessageBatchToStore> batchCapture = ArgumentCaptor.forClass(MessageBatchToStore.class);
-            ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(2)), batchCapture.capture(), groupCapture.capture());
-            verify(cradleEntitiesFactory, times(2 + 2/*invocations in SessionBatchHolder (init + reset)*/)).messageBatch();
-
-            List<MessageBatchToStore> value = batchCapture.getAllValues();
-            assertNotNull(value);
-            assertEquals(2, value.size());
-            assertMessageBatchToStore(value.get(0), bookName, "test", Direction.FIRST, firstDelivery.size());
-            assertMessageBatchToStore(value.get(1), bookName, "test", Direction.FIRST, secondDelivery.size());
-
-            assertAllGroupValuesMatchTo(groupCapture, "group", 2);
-
-        }
     }
 
     @Nested
@@ -389,29 +362,32 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             messageStore.handle(deliveryOf(first));
             messageStore.handle(deliveryOf(second));
 
-            ArgumentCaptor<MessageBatchToStore> batchCapture = ArgumentCaptor.forClass(MessageBatchToStore.class);
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(2)), batchCapture.capture(), groupCapture.capture());
-            verify(cradleEntitiesFactory, times(2 + 4/*invocations in SessionBatchHolder (init + reset)*/)).messageBatch();
+            storeFunction.store(verify(storageMock, timeout(DRAIN_TIMEOUT).times(2)), batchCapture.capture());
+            verify(cradleEntitiesFactory, times(2 + 4/*invocations in SessionBatchHolder (init + reset)*/))
+                    .groupedMessageBatch(groupCapture.capture());
 
-            List<MessageBatchToStore> batchValues = batchCapture.getAllValues();
+            List<GroupedMessageBatchToStore> batchValues = batchCapture.getAllValues();
             assertNotNull(batchValues);
             assertEquals(2, batchValues.size());
 
             List<String> groupValues = groupCapture.getAllValues();
             assertNotNull(groupValues);
-            assertEquals(2, groupValues.size());
+            assertEquals(6, groupValues.size());
 
-            for (int i = 0; i < groupValues.size(); i++) {
-                String group = groupValues.get(i);
-                MessageBatchToStore batch = batchValues.get(i);
+            for (int i = 0; i < batchValues.size(); i++) {
+                GroupedMessageBatchToStore batch = batchValues.get(i);
+                String group = batch.getGroup();
                 if (group.equals("group1")) {
-                    assertMessageBatchToStore(batch, bookName, "testA", Direction.FIRST, 1);
-                    assertEquals(1, batch.getId().getSequence());
+                    List<StoredMessage> messages = List.copyOf(batch.getMessages());
+                    assertMessageToStore(messages.get(0), bookName, "testA", Direction.FIRST);
+                    assertEquals(1, messages.get(0).getSequence());
                 }
                 if (group.equals("group2")) {
-                    assertMessageBatchToStore(batch, bookName, "testB", Direction.FIRST, 1);
-                    assertEquals(2, batch.getId().getSequence());
+                    List<StoredMessage> messages = List.copyOf(batch.getMessages());
+                    assertMessageToStore(messages.get(0), bookName, "testB", Direction.FIRST);
+                    assertEquals(2, messages.get(0).getSequence());
                 }
             }
         }
@@ -477,6 +453,6 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     }
 
     protected interface CradleStoreFunction {
-        CompletableFuture<Void> store(CradleStorage storage, MessageBatchToStore batch, String sessionGroup) throws CradleStorageException, IOException;
+        CompletableFuture<Void> store(CradleStorage storage, GroupedMessageBatchToStore batch) throws CradleStorageException, IOException;
     }
 }

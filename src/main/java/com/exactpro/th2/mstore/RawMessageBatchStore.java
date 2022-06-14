@@ -13,15 +13,8 @@
 
 package com.exactpro.th2.mstore;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Stream;
-
-import org.jetbrains.annotations.NotNull;
-
 import com.exactpro.cradle.CradleManager;
-import com.exactpro.cradle.messages.MessageBatchToStore;
+import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.RawMessage;
@@ -29,6 +22,12 @@ import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
+import org.jetbrains.annotations.NotNull;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 
 public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, RawMessage> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.RAW)
@@ -49,8 +48,8 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
     }
 
     @Override
-    protected CompletableFuture<Void> store(BatchData batchData) throws CradleStorageException, IOException {
-        return cradleStorage.storeGroupedMessageBatchAsync(batchData.batch, batchData.sessionGroup);
+    protected CompletableFuture<Void> store(GroupedMessageBatchToStore batch) throws CradleStorageException, IOException {
+        return cradleStorage.storeGroupedMessageBatchAsync(batch);
     }
 
     @Override

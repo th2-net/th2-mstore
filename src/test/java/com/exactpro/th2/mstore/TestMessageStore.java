@@ -14,7 +14,7 @@ package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.Direction;
 import com.exactpro.cradle.messages.MessageToStore;
-import com.exactpro.cradle.messages.StoredMessageBatch;
+import com.exactpro.cradle.messages.StoredGroupMessageBatch;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessage.Builder;
@@ -83,20 +83,20 @@ public class TestMessageStore {
         first.setTimestamp(TIMESTAMP);
         first.setContent(new byte[] { 3, 1, 2 });
 
-        StoredMessageBatch batch = new StoredMessageBatch();
+        StoredGroupMessageBatch batch = new StoredGroupMessageBatch("test-stream");
         batch.addMessage(first);
         batch.addMessage(second);
 
         assertEquals(
-                "[stream=test-stream,direction=FIRST,batch id=2,min timestamp=2022-04-08T08:15:55.328451976Z,max timestamp=2022-04-08T08:15:56.328451976Z,size=97,count=2,sequences=[2,3]]",
+                "[stream=test-stream,count=2,sequences=[2,3]]",
                 formatStoredMessageBatch(batch, true)
         );
         assertEquals(
-                "[stream=test-stream,direction=FIRST,batch id=2,min timestamp=2022-04-08T08:15:55.328451976Z,max timestamp=2022-04-08T08:15:56.328451976Z,size=97,count=2]",
+                "[stream=test-stream,count=2]",
                 formatStoredMessageBatch(batch, false)
         );
 
-        StoredMessageBatch emptyBatch = new StoredMessageBatch();
+        StoredGroupMessageBatch emptyBatch = new StoredGroupMessageBatch();
 
         assertEquals("[]", formatStoredMessageBatch(emptyBatch, true));
         assertEquals("[]", formatStoredMessageBatch(emptyBatch, false));

@@ -57,7 +57,7 @@ jar {
 dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
-    implementation 'com.exactpro.th2:common:3.38.0-TH2-3578-2300290805-SNAPSHOT'
+    implementation 'com.exactpro.th2:common:3.38.0-TH2-3789-2503263273-SNAPSHOT'
     implementation 'com.google.protobuf:protobuf-java-util'
     implementation "org.jetbrains:annotations"
 

@@ -278,32 +278,21 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
      */
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
+        Map<SessionKey, M> sessions = new HashMap<>();
         SessionKey previousKey = null;
-        SequenceToTimestamp previousSequenceToTimestamp = SequenceToTimestamp.MIN;
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);
             SessionKey sessionKey = createSessionKey(message);
             if (previousKey == null) {
                 previousKey = sessionKey;
-            } else {
-                verifySession(i, previousKey, sessionKey);
             }
 
-            SequenceToTimestamp currentSequenceToTimestamp = extractSequenceToTimestamp(message);
-            verifySequenceToTimestamp(i, previousSequenceToTimestamp, currentSequenceToTimestamp);
-            previousSequenceToTimestamp = currentSequenceToTimestamp;
-        }
-    }
-
-    private static void verifySession(int messageIndex, SessionKey previousKey, SessionKey sessionKey) {
-        if (!previousKey.equals(sessionKey)) {
-            throw new IllegalArgumentException(format(
-                    "Delivery contains different sessions. Message [%d] - session %s; Message [%d] - session %s",
-                    messageIndex - 1,
-                    previousKey,
-                    messageIndex,
-                    sessionKey
-            ));
+            if (sessions.containsKey(sessionKey)) {
+                SequenceToTimestamp previousSequenceToTimestamp = extractSequenceToTimestamp(sessions.get(sessionKey));
+                SequenceToTimestamp currentSequenceToTimestamp = extractSequenceToTimestamp(message);
+                verifySequenceToTimestamp(i, previousSequenceToTimestamp, currentSequenceToTimestamp);
+            }
+            sessions.put(sessionKey, message);
         }
     }
 

@@ -178,28 +178,6 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         }
 
         @Test
-        @DisplayName("Delivery with different aliases is not stored")
-        void testDifferentAliases() throws CradleStorageException, IOException {
-            String bookName = bookName(random.nextInt());
-            M first = createMessage("testA", "group", Direction.FIRST, 1, bookName);
-            M second = createMessage("testB", "group", Direction.FIRST, 2, bookName);
-
-            messageStore.handle(deliveryOf(first, second));
-            verify(messageStore, never()).storeMessages(any(), any());
-        }
-
-        @Test
-        @DisplayName("Delivery with different directions is not stored")
-        void testDifferentDirections() throws CradleStorageException, IOException {
-            String bookName = bookName(random.nextInt());
-            M first = createMessage("test", "group", Direction.FIRST, 1, bookName);
-            M second = createMessage("test", "group", Direction.SECOND, 2, bookName);
-
-            messageStore.handle(deliveryOf(first, second));
-            verify(messageStore, never()).storeMessages(any(), any());
-        }
-
-        @Test
         @DisplayName("Duplicated delivery is ignored")
         void testDuplicatedDelivery() throws CradleStorageException, IOException {
             String bookName = bookName(random.nextInt());
@@ -348,6 +326,29 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         }
 
     }
+
+    @Test
+    @DisplayName("Delivery with different aliases is stored")
+    void testDifferentAliases() throws CradleStorageException, IOException {
+        String bookName = bookName(random.nextInt());
+        M first = createMessage("testA", "group", Direction.FIRST, 1, bookName);
+        M second = createMessage("testB", "group", Direction.FIRST, 2, bookName);
+
+        messageStore.handle(deliveryOf(first, second));
+        verify(messageStore, times(1)).storeMessages(any(), any());
+    }
+
+    @Test
+    @DisplayName("Delivery with different directions is stored")
+    void testDifferentDirections() throws CradleStorageException, IOException {
+        String bookName = bookName(random.nextInt());
+        M first = createMessage("test", "group", Direction.FIRST, 1, bookName);
+        M second = createMessage("test", "group", Direction.SECOND, 2, bookName);
+
+        messageStore.handle(deliveryOf(first, second));
+        verify(messageStore, times(1)).storeMessages(any(), any());
+    }
+
 
     @Nested
     @DisplayName("Deliveries for different groups")

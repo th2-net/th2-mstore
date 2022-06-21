@@ -170,7 +170,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     public final void handle(T messageBatch) {
         try {
-            verifyBatch(messageBatch);
+            //verifyBatch(messageBatch);
             List<M> messages = getMessages(messageBatch);
             if (messages.isEmpty()) {
                 if (logger.isWarnEnabled()) {

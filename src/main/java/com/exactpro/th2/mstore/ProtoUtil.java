@@ -48,11 +48,12 @@ public class ProtoUtil {
         MessageID messageID = metadata.getId();
         var builder = new MessageToStoreBuilder()
                 .streamName(messageID.getConnectionId().getSessionAlias())
-                .content(protoRawMessage.toByteArray())
+                .content(protoRawMessage.getBody().toByteArray())
                 .timestamp(toInstant(metadata.getTimestamp()))
                 .direction(toCradleDirection(messageID.getDirection()))
                 .index(messageID.getSequence());
         addProperties(builder, protoRawMessage.getMetadata().getPropertiesMap());
+
         return builder.build();
     }
 

@@ -63,7 +63,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
     private final CradleManager cradleManagerMock = mock(CradleManager.class);
 
-    private final CradleStorage storageMock = mock(CradleStorage.class, RETURNS_DEEP_STUBS);
+    private final CradleStorage storageMock = mock(CradleStorage.class);
 
     @SuppressWarnings("unchecked")
     private final MessageRouter<T> routerMock = (MessageRouter<T>)mock(MessageRouter.class);
@@ -90,9 +90,11 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
 
+        StoredMessage mockedStoredMessage = mock(StoredMessage.class);
+        when(mockedStoredMessage.getTimestamp()).thenReturn(Instant.MIN);
         try {
             when(storageMock.getLastMessageIndex(any(), any())).thenReturn(-1L);
-            when(storageMock.getMessage(any()).getTimestamp()).thenReturn(Instant.MIN);
+            when(storageMock.getMessage(any())).thenReturn(mockedStoredMessage);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }

@@ -282,30 +282,35 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
      */
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
-        SessionKey previousKey = null;
+        HashMap<SessionKey, SessionData> innerCache = new HashMap<>();
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);
             SessionKey sessionKey = createSessionKey(message);
             SequenceToTimestamp currentSequenceToTimestamp = extractSequenceToTimestamp(message);
-            if (previousKey == null) {
-                previousKey = sessionKey;
-                SequenceToTimestamp lastSequenceToTimestamp = getLastSequenceToTimeStamp(sessionKey);
-                SessionData lastSessionData = new SessionData();
-                lastSessionData.getAndUpdateLastSequenceToTimestamp(lastSequenceToTimestamp);
-                sessionData.put(sessionKey, lastSessionData);
+
+            SequenceToTimestamp prevSequenceToTimestamp = null;
+            if (innerCache.containsKey(sessionKey)) {
+                prevSequenceToTimestamp = innerCache.get(sessionKey).lastSequenceToTimestamp.get();
+            } else {
+                if (sessionData.containsKey(sessionKey)) {
+                    prevSequenceToTimestamp = sessionData.get(sessionKey).lastSequenceToTimestamp.get();
+                    innerCache.put(sessionKey, sessionData.get(sessionKey));
+                } else {
+                    innerCache.put(sessionKey, new SessionData());
+                }
             }
 
-            if (sessionData.containsKey(sessionKey)) {
-                SequenceToTimestamp previousSequenceToTimestamp = sessionData.get(sessionKey).lastSequenceToTimestamp.get();
-                verifySequenceToTimestamp(i, previousSequenceToTimestamp, currentSequenceToTimestamp);
+            if (prevSequenceToTimestamp == null) {
+                prevSequenceToTimestamp = getLastSequenceToTimeStamp(sessionKey);
             }
-            SessionData currentSessionData = new SessionData();
-            currentSessionData.getAndUpdateLastSequenceToTimestamp(currentSequenceToTimestamp);
-            sessionData.put(sessionKey, currentSessionData);
+
+            verifySequenceToTimestamp(i, prevSequenceToTimestamp, currentSequenceToTimestamp);
+
+            innerCache.get(sessionKey).getAndUpdateLastSequenceToTimestamp(currentSequenceToTimestamp);
         }
     }
     private SequenceToTimestamp getLastSequenceToTimeStamp(SessionKey sessionKey){
-        long lastSequence = 1L;
+        long lastSequence = -1L;
         try {
             lastSequence = cradleStorage.getLastMessageIndex(sessionKey.session, sessionKey.direction);
         } catch (IOException e) {

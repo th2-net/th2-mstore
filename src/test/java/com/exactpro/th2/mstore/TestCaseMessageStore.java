@@ -19,6 +19,7 @@ import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.messages.StoredGroupMessageBatch;
 import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.messages.StoredMessageBatch;
+import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.cradle.testevents.StoredTestEventBatch;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.ConnectionID;
@@ -37,6 +38,7 @@ import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -61,7 +63,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
     private final CradleManager cradleManagerMock = mock(CradleManager.class);
 
-    private final CradleStorage storageMock = mock(CradleStorage.class);
+    private final CradleStorage storageMock = mock(CradleStorage.class, RETURNS_DEEP_STUBS);
 
     @SuppressWarnings("unchecked")
     private final MessageRouter<T> routerMock = (MessageRouter<T>)mock(MessageRouter.class);
@@ -87,6 +89,13 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         when(storageMock.storeGroupedMessageBatchAsync(any(StoredGroupMessageBatch.class), any(String.class))).thenReturn(completableFuture);
 
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
+
+        try {
+            when(storageMock.getLastMessageIndex(any(), any())).thenReturn(-1L);
+            when(storageMock.getMessage(any()).getTimestamp()).thenReturn(Instant.MIN);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
         when(routerMock.subscribeAll(any(), any())).thenReturn(mock(SubscriberMonitor.class));
         MessageStoreConfiguration configuration = new MessageStoreConfiguration();
         configuration.setDrainInterval(DRAIN_TIMEOUT / 10);

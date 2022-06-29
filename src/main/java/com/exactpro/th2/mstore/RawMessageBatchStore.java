@@ -13,28 +13,28 @@
 
 package com.exactpro.th2.mstore;
 
-import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
+import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.Direction;
+import com.exactpro.cradle.messages.MessageToStore;
+import com.exactpro.cradle.messages.StoredGroupMessageBatch;
+import com.exactpro.th2.common.grpc.MessageID;
+import com.exactpro.th2.common.grpc.RawMessage;
+import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.common.message.MessageUtils;
+import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.QueueAttribute;
+import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.util.Timestamps;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.jetbrains.annotations.NotNull;
 
-import com.exactpro.cradle.CradleManager;
-import com.exactpro.cradle.messages.MessageToStore;
-import com.exactpro.cradle.messages.StoredMessageBatch;
-import com.exactpro.th2.common.grpc.MessageID;
-import com.exactpro.th2.common.grpc.RawMessage;
-import com.exactpro.th2.common.grpc.RawMessageBatch;
-import com.exactpro.th2.common.schema.message.MessageRouter;
-import com.exactpro.th2.common.schema.message.QueueAttribute;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
@@ -58,8 +58,8 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
     }
 
     @Override
-    protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch, String sessionGroup) {
-        return cradleStorage.storeGroupedMessageBatchAsync(storedMessageBatch, sessionGroup);
+    protected CompletableFuture<Void> store(StoredGroupMessageBatch messageBatch, String sessionGroup) {
+        return cradleStorage.storeGroupedMessageBatchAsync(messageBatch, sessionGroup);
     }
 
     @Override
@@ -74,9 +74,10 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
     protected SessionKey createSessionKey(RawMessage message) {
         MessageID messageID = message.getMetadata().getId();
         String sessionAlias = messageID.getConnectionId().getSessionAlias();
+        Direction direction = toCradleDirection(messageID.getDirection());
         String sessionGroup = messageID.getConnectionId().getSessionGroup();
         sessionGroup = (sessionGroup == null || sessionGroup.isEmpty()) ? sessionAlias : sessionGroup;
-        return new SessionKey(sessionAlias, sessionGroup, toCradleDirection(messageID.getDirection()));
+        return new SessionKey(sessionAlias, direction, sessionGroup);
     }
 
     @Override

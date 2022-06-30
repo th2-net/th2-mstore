@@ -294,9 +294,6 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             } else {
                 if (sessionData.containsKey(sessionKey)) {
                     prevSequenceToTimestamp = sessionData.get(sessionKey).lastSequenceToTimestamp.get();
-                    innerCache.put(sessionKey, sessionData.get(sessionKey));
-                } else {
-                    innerCache.put(sessionKey, new SessionData());
                 }
             }
 
@@ -305,8 +302,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             }
 
             verifySequenceToTimestamp(i, prevSequenceToTimestamp, currentSequenceToTimestamp);
-
-            innerCache.get(sessionKey).getAndUpdateLastSequenceToTimestamp(currentSequenceToTimestamp);
+            SessionData currSessionData = new SessionData();
+            currSessionData.getAndUpdateLastSequenceToTimestamp(currentSequenceToTimestamp);
+            innerCache.put(sessionKey, currSessionData);
         }
     }
     private SequenceToTimestamp getLastSequenceToTimeStamp(SessionKey sessionKey){

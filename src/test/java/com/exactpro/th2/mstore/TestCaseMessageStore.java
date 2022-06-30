@@ -38,7 +38,6 @@ import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -212,16 +211,6 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             messageStore.handle(deliveryOf(first, second));
             verify(messageStore, never()).storeMessages(any(), any());
         }
-
-//        @Test
-//        @DisplayName("Delivery with different directions is not stored")
-//        void testDifferentDirections() throws CradleStorageException {
-//            M first = createMessage("test", Direction.FIRST, 1);
-//            M second = createMessage("test", Direction.SECOND, 2);
-//
-//            messageStore.handle(deliveryOf(first, second));
-//            verify(messageStore, never()).storeMessages(any(), any());
-//        }
 
         @Test
         @DisplayName("Duplicated or less sequence delivery is ignored")

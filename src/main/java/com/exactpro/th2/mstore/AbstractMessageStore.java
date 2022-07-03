@@ -280,9 +280,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             M message = messages.get(i);
             SessionKey sessionKey = createSessionKey(message);
             SequenceToTimestamp currentSequenceToTimestamp = extractSequenceToTimestamp(message);
-            if(lastKey == null){
-                lastKey = sessionKey;
-            }
+
             SequenceToTimestamp prevSequenceToTimestamp = null;
             if (innerCache.containsKey(sessionKey)) {
                 prevSequenceToTimestamp = innerCache.get(sessionKey).lastSequenceToTimestamp.get();
@@ -291,9 +289,12 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             } else {
                 prevSequenceToTimestamp = getLastSequenceToTimeStamp(sessionKey);
             }
-
+            if(lastKey == null){
+                lastKey = sessionKey;
+            } else {
+                verifyGroupSession(i, lastKey,sessionKey);
+            }
             verifySequenceToTimestamp(i, prevSequenceToTimestamp, currentSequenceToTimestamp);
-            verifyGroupSession(i, lastKey,sessionKey);
             SessionData currSessionData = new SessionData();
             currSessionData.getAndUpdateLastSequenceToTimestamp(currentSequenceToTimestamp);
             innerCache.put(sessionKey, currSessionData);

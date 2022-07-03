@@ -298,7 +298,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             if (lastKey == null) {
                 lastKey = sessionKey;
             } else {
-                verifySession(i, lastKey, sessionKey);
+                verifySessionGroup(i, lastKey, sessionKey);
             }
 
             verifySequence(i, prevSequence, currentSeq);
@@ -330,7 +330,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
 
-    private static void verifySession(int messageIndex, SessionKey lastKey, SessionKey sessionKey) {
+    private static void verifySessionGroup(int messageIndex, SessionKey lastKey, SessionKey sessionKey) {
         if (!lastKey.sessionGroup.equals(sessionKey.sessionGroup)) {
             throw new IllegalArgumentException(
                     String.format(

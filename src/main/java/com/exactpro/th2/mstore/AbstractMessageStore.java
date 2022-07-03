@@ -183,18 +183,10 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                 SequenceToTimestamp sequenceToTimestamp = extractSequenceToTimestamp(message);
                 SessionKey sessionKey = createSessionKey(message);
 
-                if (sessionGroup != null && !sessionGroup.equals(sessionKey.getSessionGroup())) {
-                    logger.error("Batch contains mixed group messages {}", shortDebugString(messageBatch));
-                    return;
-                }
                 sessionGroup = sessionKey.getSessionGroup();
                 SessionData sessionData = this.sessionData.computeIfAbsent(sessionKey, k -> new SessionData());
 
-                long prevSequence = sessionData.getAndUpdateLastSequenceToTimestamp(sequenceToTimestamp).getSequence();
-                if (prevSequence >= sequenceToTimestamp.getSequence()) {
-                    logger.error("Duplicated batch found: {}", shortDebugString(messageBatch));
-                    return;
-                }
+                sessionData.getAndUpdateLastSequenceToTimestamp(sequenceToTimestamp);
             }
 
             storeMessages(messages, sessionGroup);
@@ -283,25 +275,25 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
         HashMap<SessionKey, SessionData> innerCache = new HashMap<>();
+        SessionKey lastKey = null;
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);
             SessionKey sessionKey = createSessionKey(message);
             SequenceToTimestamp currentSequenceToTimestamp = extractSequenceToTimestamp(message);
-
+            if(lastKey == null){
+                lastKey = sessionKey;
+            }
             SequenceToTimestamp prevSequenceToTimestamp = null;
             if (innerCache.containsKey(sessionKey)) {
                 prevSequenceToTimestamp = innerCache.get(sessionKey).lastSequenceToTimestamp.get();
+            } else if(sessionData.containsKey(sessionKey)) {
+                prevSequenceToTimestamp = sessionData.get(sessionKey).lastSequenceToTimestamp.get();
             } else {
-                if (sessionData.containsKey(sessionKey)) {
-                    prevSequenceToTimestamp = sessionData.get(sessionKey).lastSequenceToTimestamp.get();
-                }
-            }
-
-            if (prevSequenceToTimestamp == null) {
                 prevSequenceToTimestamp = getLastSequenceToTimeStamp(sessionKey);
             }
 
             verifySequenceToTimestamp(i, prevSequenceToTimestamp, currentSequenceToTimestamp);
+            verifyGroupSession(i, lastKey,sessionKey);
             SessionData currSessionData = new SessionData();
             currSessionData.getAndUpdateLastSequenceToTimestamp(currentSequenceToTimestamp);
             innerCache.put(sessionKey, currSessionData);
@@ -348,6 +340,24 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             ));
         }
     }
+
+    private static void verifyGroupSession(
+            int messageIndex,
+            SessionKey previous,
+            SessionKey current
+    ) {
+        if (!current.getSessionGroup().equals(previous.getSessionGroup())) {
+            throw new IllegalArgumentException(format(
+                    "Delivery contains different session groups. Message [%d] - sequence %d; Message [%d] - sequence %d",
+                    messageIndex - 1,
+                    previous,
+                    messageIndex,
+                    current
+            ));
+        }
+    }
+
+
 
     private void drainByScheduler() {
         logger.debug("Start storing batches by scheduler");

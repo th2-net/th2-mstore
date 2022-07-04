@@ -297,8 +297,13 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
             if (lastKey == null) {
                 lastKey = sessionKey;
-            } else {
-                verifySessionGroup(i, lastKey, sessionKey);
+            } else if(!lastKey.sessionGroup.equals(sessionKey.sessionGroup)) {
+                throw new IllegalArgumentException(
+                        String.format(
+                                "Delivery contains different session groups. Message [%d] - session %s; Message [%d] - session %s",
+                                i - 1, lastKey, i, sessionKey
+                        )
+                );
             }
 
             verifySequence(i, prevSequence, currentSeq);
@@ -325,17 +330,6 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     String.format(
                             "Delivery contains unordered messages. Message [%d] - seqN %d; Message [%d] - seqN %d",
                             messageIndex - 1, lastSeq, messageIndex, currentSeq
-                    )
-            );
-        }
-    }
-
-    private static void verifySessionGroup(int messageIndex, SessionKey lastKey, SessionKey sessionKey) {
-        if (!lastKey.sessionGroup.equals(sessionKey.sessionGroup)) {
-            throw new IllegalArgumentException(
-                    String.format(
-                            "Delivery contains different session groups. Message [%d] - session %s; Message [%d] - session %s",
-                            messageIndex - 1, lastKey, messageIndex, sessionKey
                     )
             );
         }

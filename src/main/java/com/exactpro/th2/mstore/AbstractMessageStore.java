@@ -291,8 +291,14 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             }
             if(lastKey == null){
                 lastKey = sessionKey;
-            } else {
-                verifyGroupSession(i, lastKey,sessionKey);
+            } else if(!lastKey.getSessionGroup().equals(sessionKey.getSessionGroup())) {
+                throw new IllegalArgumentException(format(
+                        "Delivery contains different session groups. Message [%d] - sequence %d; Message [%d] - sequence %d",
+                        i - 1,
+                        lastKey,
+                        i,
+                        sessionKey
+                ));
             }
             verifySequenceToTimestamp(i, prevSequenceToTimestamp, currentSequenceToTimestamp);
             SessionData currSessionData = new SessionData();
@@ -342,21 +348,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
 
-    private static void verifyGroupSession(
-            int messageIndex,
-            SessionKey previous,
-            SessionKey current
-    ) {
-        if (!current.getSessionGroup().equals(previous.getSessionGroup())) {
-            throw new IllegalArgumentException(format(
-                    "Delivery contains different session groups. Message [%d] - sequence %d; Message [%d] - sequence %d",
-                    messageIndex - 1,
-                    previous,
-                    messageIndex,
-                    current
-            ));
-        }
-    }
+
 
 
 

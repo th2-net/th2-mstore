@@ -30,17 +30,19 @@ public class ProtoUtil {
     public static MessageToStore toCradleMessage(RawMessage protoRawMessage) throws CradleStorageException {
         return createMessageToStore(
                 protoRawMessage.getMetadata().getId(),
+                protoRawMessage.getMetadata().getProtocol(),
                 protoRawMessage.toByteArray()
         );
     }
 
-    private static MessageToStore createMessageToStore(MessageID messageId, byte[] byteArray) throws CradleStorageException {
+    private static MessageToStore createMessageToStore(MessageID messageId, String protocol, byte[] byteArray) throws CradleStorageException {
         return new MessageToStoreBuilder()
                 .bookId(new BookId(messageId.getBookName()))
                 .sessionAlias(messageId.getConnectionId().getSessionAlias())
                 .direction(toCradleDirection(messageId.getDirection()))
                 .timestamp(toInstant(messageId.getTimestamp()))
                 .sequence(messageId.getSequence())
+                .protocol(protocol)
                 .content(byteArray)
                 .build();
     }

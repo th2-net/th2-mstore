@@ -14,8 +14,9 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.Direction;
 import com.exactpro.cradle.messages.MessageToStore;
-import com.exactpro.cradle.messages.StoredMessageBatch;
+import com.exactpro.cradle.messages.StoredGroupMessageBatch;
 import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageBatch;
 import com.exactpro.th2.common.grpc.MessageID;
@@ -77,8 +78,9 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     }
 
     @Override
-    protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch, String sessionGroup) {
-        return cradleStorage.storeProcessedMessageBatchAsync(storedMessageBatch);
+    protected CompletableFuture<Void> store(StoredGroupMessageBatch messageBatch, String sessionGroup) {
+        logger.warn("Storing parsed messages has been deprecated, doing nothing");
+        return new CompletableFuture<>();
     }
 
     @Override
@@ -93,9 +95,10 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     protected SessionKey createSessionKey(Message message) {
         MessageID messageID = message.getMetadata().getId();
         String sessionAlias = messageID.getConnectionId().getSessionAlias();
+        Direction direction = toCradleDirection(messageID.getDirection());
         String sessionGroup = messageID.getConnectionId().getSessionGroup();
         sessionGroup = (sessionGroup == null || sessionGroup.isEmpty()) ? sessionAlias : sessionGroup;
-        return new SessionKey(sessionAlias, sessionGroup, toCradleDirection(messageID.getDirection()));
+        return new SessionKey(sessionAlias, direction, sessionGroup);
     }
 
     @Override

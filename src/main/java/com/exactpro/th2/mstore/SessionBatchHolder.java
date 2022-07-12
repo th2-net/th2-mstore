@@ -13,27 +13,28 @@
 
 package com.exactpro.th2.mstore;
 
+import com.exactpro.cradle.messages.StoredGroupMessageBatch;
+import com.exactpro.cradle.utils.CradleStorageException;
+import org.jetbrains.annotations.NotNull;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-import org.jetbrains.annotations.NotNull;
-
-import com.exactpro.cradle.messages.StoredMessageBatch;
-import com.exactpro.cradle.utils.CradleStorageException;
-
 public class SessionBatchHolder {
 
-    private final Supplier<StoredMessageBatch> batchSupplier;
+    private final Supplier<StoredGroupMessageBatch> batchSupplier;
 
     private volatile Instant lastReset = Instant.now();
 
-    private volatile StoredMessageBatch holtBatch;
+    private volatile StoredGroupMessageBatch holtBatch;
+    private final String group;
 
-    public SessionBatchHolder(Supplier<StoredMessageBatch> batchSupplier) {
+    public SessionBatchHolder(String group, Supplier<StoredGroupMessageBatch> batchSupplier) {
         this.batchSupplier = Objects.requireNonNull(batchSupplier, "'Batch supplier' parameter");
-        holtBatch = batchSupplier.get();
+        this.holtBatch = batchSupplier.get();
+        this.group = group;
     }
 
     /**
@@ -44,7 +45,7 @@ public class SessionBatchHolder {
      * @return {@code true} if the batch is successfully added to currently holt one. Otherwise, returns {@code false}
      * @throws CradleStorageException if batch doesn't meet requirements for adding to the currently holt one
      */
-    public boolean add(StoredMessageBatch batch) throws CradleStorageException {
+    public boolean add(StoredGroupMessageBatch batch) throws CradleStorageException {
         return holtBatch.addBatch(batch);
     }
 
@@ -59,21 +60,25 @@ public class SessionBatchHolder {
     }
 
     @NotNull
-    public StoredMessageBatch reset() {
+    public StoredGroupMessageBatch reset() {
         return internalReset(batchSupplier.get());
     }
 
     @NotNull
-    public StoredMessageBatch resetAndUpdate(StoredMessageBatch batch) {
+    public StoredGroupMessageBatch resetAndUpdate(StoredGroupMessageBatch batch) {
         Objects.requireNonNull(batch, "'Batch' parameter");
         return internalReset(batch);
     }
 
-    private StoredMessageBatch internalReset(StoredMessageBatch newValue) {
-        StoredMessageBatch currentBatch = holtBatch;
+    private StoredGroupMessageBatch internalReset(StoredGroupMessageBatch newValue) {
+        StoredGroupMessageBatch currentBatch = holtBatch;
         holtBatch = newValue;
         lastReset = Instant.now();
 
         return currentBatch;
+    }
+
+    public String getGroup() {
+        return group;
     }
 }

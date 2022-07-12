@@ -14,6 +14,7 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.serialization.MessagesSizeCalculator;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.RawMessage;
@@ -30,7 +31,7 @@ import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 
 public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, RawMessage> {
     TestRawMessageStore() {
-        super((storage, batch, group) -> storage.storeGroupedMessageBatchAsync(batch, group));
+        super(CradleStorage::storeGroupedMessageBatchAsync);
     }
 
     @Override
@@ -53,7 +54,7 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
 
     @Override
     protected long extractSizeInBatch(RawMessage message) {
-        return MessagesSizeCalculator.calculateMessageSizeInBatch(ProtoUtil.toCradleMessage(message));
+        return MessagesSizeCalculator.calculateMessageSizeInGroupBatch(ProtoUtil.toCradleMessage(message));
     }
 
     @Override

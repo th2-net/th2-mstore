@@ -23,7 +23,7 @@ repositories {
     }
 
     mavenCentral()
-
+    
     maven {
         name 'Sonatype_snapshots'
         url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
@@ -58,6 +58,7 @@ dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
     implementation 'com.exactpro.th2:common:3.38.0-TH2-3789-2549112988-SNAPSHOT'
+    implementation 'com.exactpro.th2:common:3.38.0-TH2-3578-2488458013-SNAPSHOT'
     implementation 'com.google.protobuf:protobuf-java-util'
     implementation "org.jetbrains:annotations"
 

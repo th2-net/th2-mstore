@@ -13,13 +13,6 @@
 
 package com.exactpro.th2.mstore;
 
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Stream;
-
-import com.google.protobuf.TextFormat;
-import org.jetbrains.annotations.NotNull;
-
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.StoredMessageBatch;
@@ -29,11 +22,20 @@ import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
+import com.google.protobuf.TextFormat;
+import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 
 @Deprecated(since = "5.0.0")
 public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
+    private static final Logger logger = LoggerFactory.getLogger(MessageBatchStore.class);
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.PARSED)
             .map(QueueAttribute::toString)
             .toArray(String[]::new);
@@ -46,13 +48,36 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
         super(router, cradleManager, configuration);
     }
 
+
+    @Override
+    public void handle(MessageBatch messageBatch) {
+        try {
+            List<Message> messages = getMessages(messageBatch);
+            if (messages.isEmpty()) {
+                if (logger.isWarnEnabled()) {
+                    logger.warn("Empty batch has been received {}", shortDebugString(messageBatch));
+                }
+                return;
+            }
+            Message firstMessage = messages.get(0);
+            if (logger.isWarnEnabled()) {
+                logger.warn("Ignoring parsed batch for {}. Parsed batches are deprecated", createSessionKey(firstMessage));
+            }
+        } catch (Exception ex) {
+            if (logger.isErrorEnabled()) {
+                logger.error("Cannot handle the batch of type {} message id {}", messageBatch.getClass(), shortDebugString(messageBatch), ex);
+            }
+        }
+    }
+
+
     @Override
     protected MessageToStore convert(Message originalMessage) {
         return ProtoUtil.toCradleMessage(originalMessage);
     }
 
     @Override
-    protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch) {
+    protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch, String sessionGroup) {
         return cradleStorage.storeProcessedMessageBatchAsync(storedMessageBatch);
     }
 
@@ -67,7 +92,10 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     @Override
     protected SessionKey createSessionKey(Message message) {
         MessageID messageID = message.getMetadata().getId();
-        return new SessionKey(messageID.getConnectionId().getSessionAlias(), toCradleDirection(messageID.getDirection()));
+        String sessionAlias = messageID.getConnectionId().getSessionAlias();
+        String sessionGroup = messageID.getConnectionId().getSessionGroup();
+        sessionGroup = (sessionGroup == null || sessionGroup.isEmpty()) ? sessionAlias : sessionGroup;
+        return new SessionKey(sessionAlias, sessionGroup, toCradleDirection(messageID.getDirection()));
     }
 
     @Override

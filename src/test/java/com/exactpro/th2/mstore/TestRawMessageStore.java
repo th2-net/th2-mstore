@@ -14,7 +14,6 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleManager;
-import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.serialization.MessagesSizeCalculator;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.RawMessage;
@@ -31,7 +30,7 @@ import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 
 public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, RawMessage> {
     TestRawMessageStore() {
-        super(CradleStorage::storeMessageBatchAsync);
+        super((storage, batch, group) -> storage.storeGroupedMessageBatchAsync(batch, group));
     }
 
     @Override
@@ -41,11 +40,11 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
     }
 
     @Override
-    protected RawMessage createMessage(String session, Direction direction, long sequence, Instant timestamp) {
+    protected RawMessage createMessage(String session, String group, Direction direction, long sequence, Instant timestamp) {
         return RawMessage.newBuilder()
                 .setMetadata(
                         RawMessageMetadata.newBuilder()
-                                .setId(createMessageId(session, direction, sequence))
+                                .setId(createMessageId(session, group, direction, sequence))
                                 .setTimestamp(toTimestamp(timestamp))
                                 .build()
                 )

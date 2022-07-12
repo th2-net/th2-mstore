@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class TestMessageStore {
 
-    private static final Instant TIMESTAMP = Instant.ofEpochSecond(1_649_405_755L, 328_451_976L);
+    private static final Instant TIMESTAMP = Instant.parse("2022-04-08T08:15:55.328451976Z");
 
     @Test
     public void testFormatMessageBatch() {
@@ -76,7 +76,7 @@ public class TestMessageStore {
 
         MessageToStore second = new MessageToStore(first);
         second.setIndex(3);
-        second.setTimestamp(TIMESTAMP.plus(1, ChronoUnit.DAYS));
+        second.setTimestamp(TIMESTAMP.plus(1, ChronoUnit.SECONDS));
         second.setContent(new byte[] { 1, 3, 2 });
 
         first.setIndex(2);
@@ -88,11 +88,11 @@ public class TestMessageStore {
         batch.addMessage(second);
 
         assertEquals(
-                "[stream=test-stream,direction=FIRST,batch id=2,min timestamp=2022-04-08T08:15:55.328451976Z,max timestamp=2022-04-09T08:15:55.328451976Z,size=97,count=2,sequences=[2,3]]",
+                "[stream=test-stream,direction=FIRST,batch id=2,min timestamp=2022-04-08T08:15:55.328451976Z,max timestamp=2022-04-08T08:15:56.328451976Z,size=97,count=2,sequences=[2,3]]",
                 formatStoredMessageBatch(batch, true)
         );
         assertEquals(
-                "[stream=test-stream,direction=FIRST,batch id=2,min timestamp=2022-04-08T08:15:55.328451976Z,max timestamp=2022-04-09T08:15:55.328451976Z,size=97,count=2]",
+                "[stream=test-stream,direction=FIRST,batch id=2,min timestamp=2022-04-08T08:15:55.328451976Z,max timestamp=2022-04-08T08:15:56.328451976Z,size=97,count=2]",
                 formatStoredMessageBatch(batch, false)
         );
 

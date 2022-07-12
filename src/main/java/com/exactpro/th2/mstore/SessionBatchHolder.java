@@ -16,7 +16,6 @@ package com.exactpro.th2.mstore;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 import org.jetbrains.annotations.NotNull;

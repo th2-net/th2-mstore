@@ -76,7 +76,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
         when(storageMock.getEntitiesFactory()).thenReturn(cradleEntitiesFactory);
         when(storageMock.storeGroupedMessageBatchAsync(any(GroupedMessageBatchToStore.class))).thenReturn(completableFuture);
-
+        when(storageMock.getLastSequence(any(), any(), any())).thenReturn(-1L);
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         when(routerMock.subscribeAll(any(), any())).thenReturn(mock(SubscriberMonitor.class));
         MessageStoreConfiguration configuration = new MessageStoreConfiguration();

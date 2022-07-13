@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import com.exactpro.cradle.BookId;
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.Direction;
@@ -170,7 +171,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     public final void handle(T messageBatch) {
         try {
-            //verifyBatch(messageBatch);
+            verifyBatch(messageBatch);
             List<M> messages = getMessages(messageBatch);
             if (messages.isEmpty()) {
                 if (logger.isWarnEnabled()) {
@@ -184,19 +185,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                 long sequence = extractSequence(message);
                 SessionKey sessionKey = createSessionKey(message);
 
-                if (sessionGroup != null && !sessionGroup.equals(sessionKey.sessionGroup)) {
-                    logger.error("Batch contains mixed group messages", shortDebugString(messageBatch));
-                    return;
-                }
                 sessionGroup = sessionKey.sessionGroup;
                 SessionData sessionData = this.sessionData.computeIfAbsent(sessionKey, k -> new SessionData());
-
-                long prevSequence = sessionData.getAndUpdateSequence(sequence);
-                if (prevSequence >= sequence) {
-                    logger.error("Duplicated batch found: {}", shortDebugString(messageBatch));
-                    return;
-                }
-
+                sessionData.getAndUpdateSequence(sequence);
             }
 
             storeMessages(messages, sessionGroup);
@@ -204,6 +195,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             logger.error("Cannot handle the batch of type {}", messageBatch.getClass(), ex);
         }
     }
+
 
 
     protected void storeMessages(List<M> messagesList, String sessionGroup) throws CradleStorageException, IOException {
@@ -287,22 +279,49 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
      */
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
+        HashMap<SessionKey, SessionData> innerCache = new HashMap<>();
         SessionKey lastKey = null;
-        long lastSeq = Long.MIN_VALUE;
+        long prevSequence = Long.MIN_VALUE;
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);
             SessionKey sessionKey = createSessionKey(message);
-            if (lastKey == null) {
-                lastKey = sessionKey;
+            long currentSeq = extractSequence(message);
+
+            if (innerCache.containsKey(sessionKey)) {
+                prevSequence = innerCache.get(sessionKey).lastSequence.get();
+            } else if(sessionData.containsKey(sessionKey)) {
+                prevSequence = sessionData.get(sessionKey).lastSequence.get();
             } else {
-                verifySession(i, lastKey, sessionKey);
+                prevSequence = getLastMessageSequence(sessionKey);
             }
 
-            long currentSeq = extractSequence(message);
-            verifySequence(i, lastSeq, currentSeq);
-            lastSeq = currentSeq;
+            if (lastKey == null) {
+                lastKey = sessionKey;
+            } else if(!lastKey.sessionGroup.equals(sessionKey.sessionGroup)) {
+                throw new IllegalArgumentException(
+                        String.format(
+                                "Delivery contains different session groups. Message [%d] - session %s; Message [%d] - session %s",
+                                i - 1, lastKey, i, sessionKey
+                        )
+                );
+            }
+
+            verifySequence(i, prevSequence, currentSeq);
+            SessionData sessionData = new SessionData();
+            sessionData.getAndUpdateSequence(currentSeq);
+            innerCache.put(sessionKey, sessionData);
         }
 
+    }
+
+    private long getLastMessageSequence(SessionKey sessionKey) {
+        long lastMessageSequence = Long.MIN_VALUE;
+        try {
+            lastMessageSequence = cradleStorage.getLastSequence(sessionKey.sessionAlias, sessionKey.direction, new BookId(sessionKey.bookName));
+        } catch (Exception e) {
+            logger.error("Couldn't get sequence of last message from cradle: {}", e.getMessage());
+        }
+        return lastMessageSequence;
     }
 
     private static void verifySequence(int messageIndex, long lastSeq, long currentSeq) {
@@ -311,17 +330,6 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     String.format(
                             "Delivery contains unordered messages. Message [%d] - seqN %d; Message [%d] - seqN %d",
                             messageIndex - 1, lastSeq, messageIndex, currentSeq
-                    )
-            );
-        }
-    }
-
-    private static void verifySession(int messageIndex, SessionKey lastKey, SessionKey sessionKey) {
-        if (!lastKey.equals(sessionKey)) {
-            throw new IllegalArgumentException(
-                    String.format(
-                            "Delivery contains different sessions. Message [%d] - session %s; Message [%d] - session %s",
-                            messageIndex - 1, lastKey, messageIndex, sessionKey
                     )
             );
         }

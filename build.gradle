@@ -7,6 +7,7 @@ plugins {
 
 ext {
     sharedDir       = file("${project.rootDir}/shared")
+    cradleVersion   = '3.1.2-dev-version-3.1-2664462627-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -23,7 +24,7 @@ repositories {
     }
 
     mavenCentral()
-    
+
     maven {
         name 'Sonatype_snapshots'
         url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
@@ -57,11 +58,14 @@ jar {
 dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
-    implementation 'com.exactpro.th2:common:3.36.0'
+    implementation 'com.exactpro.th2:common:3.39.2'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 
     implementation "org.jetbrains:annotations"
+
+    implementation "com.exactpro.th2:cradle-core:$cradleVersion"
+    implementation "com.exactpro.th2:cradle-cassandra:$cradleVersion"
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.4.2'
     testImplementation 'org.mockito:mockito-junit-jupiter:3.6.0'

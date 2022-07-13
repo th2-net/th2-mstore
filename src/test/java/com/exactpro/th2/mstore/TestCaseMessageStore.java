@@ -36,6 +36,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
+import com.exactpro.cradle.messages.StoredMessage;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -96,6 +97,15 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         when(storageMock.getObjectsFactory()).thenReturn(cradleObjectsFactory);
         when(storageMock.storeProcessedMessageBatchAsync(any(StoredMessageBatch.class))).thenReturn(completableFuture);
         when(storageMock.storeMessageBatchAsync(any(StoredMessageBatch.class))).thenReturn(completableFuture);
+
+        StoredMessage mockedStoredMessage = mock(StoredMessage.class);
+        when(mockedStoredMessage.getTimestamp()).thenReturn(Instant.MIN);
+        try {
+            when(storageMock.getLastMessageIndex(any(), any())).thenReturn(-1L);
+            when(storageMock.getMessage(any())).thenReturn(mockedStoredMessage);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
 
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         when(routerMock.subscribeAll(any(), any())).thenReturn(mock(SubscriberMonitor.class));

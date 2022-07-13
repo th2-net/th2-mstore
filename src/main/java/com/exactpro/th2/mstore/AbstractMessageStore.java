@@ -13,6 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
+import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 import static com.exactpro.th2.mstore.SequenceToTimestamp.SEQUENCE_TO_TIMESTAMP_COMPARATOR;
 import static java.lang.String.format;
@@ -20,6 +21,8 @@ import static java.util.Objects.requireNonNull;
 import static java.util.function.BinaryOperator.maxBy;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
+import java.io.IOException;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
@@ -306,7 +309,10 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
         SessionKey previousKey = null;
-        SequenceToTimestamp previousSequenceToTimestamp = SequenceToTimestamp.MIN;
+        if(!messages.isEmpty()){
+            previousKey = createSessionKey(messages.get(0));
+        }
+        SequenceToTimestamp previousSequenceToTimestamp = getLastSequenceToTimeStamp(previousKey);
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);
             SessionKey sessionKey = createSessionKey(message);
@@ -320,6 +326,22 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             verifySequenceToTimestamp(i, previousSequenceToTimestamp, currentSequenceToTimestamp);
             previousSequenceToTimestamp = currentSequenceToTimestamp;
         }
+    }
+    private SequenceToTimestamp getLastSequenceToTimeStamp(SessionKey sessionKey){
+        long lastSequence = -1L;
+        try {
+            lastSequence = cradleStorage.getLastMessageIndex(sessionKey.streamName, sessionKey.direction);
+        } catch (IOException e) {
+            logger.error("Couldn't get sequence of last message from cradle: {}", e.getMessage());
+        }
+        Instant lastTimeInstant = Instant.MIN;
+        StoredMessageId storedMsgId = new StoredMessageId(sessionKey.streamName, sessionKey.direction, lastSequence);
+        try {
+            lastTimeInstant = cradleStorage.getMessage(storedMsgId).getTimestamp();
+        } catch (IOException e) {
+            logger.error("Couldn't get timestamp of last message from cradle: {}", e.getMessage());
+        }
+        return new SequenceToTimestamp(lastSequence, toTimestamp(lastTimeInstant));
     }
 
     private static void verifySession(int messageIndex, SessionKey previousKey, SessionKey sessionKey) {

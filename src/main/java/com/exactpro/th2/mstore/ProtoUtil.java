@@ -18,6 +18,7 @@ package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.MessageToStoreBuilder;
+import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.MessageMetadata;
@@ -53,6 +54,9 @@ public class ProtoUtil {
                 .direction(toCradleDirection(messageID.getDirection()))
                 .index(messageID.getSequence());
         addProperties(builder, protoRawMessage.getMetadata().getPropertiesMap());
+
+        // set protocol version in metadata
+        builder.metadata(StoredMessage.METADATA_KEY_PROTOCOL, protoRawMessage.getMetadata().getProtocol());
 
         return builder.build();
     }

@@ -7,6 +7,7 @@ plugins {
 
 ext {
     sharedDir       = file("${project.rootDir}/shared")
+    cradleVersion   = '3.2.3-dev-version-3.2-2648664855-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -57,9 +58,12 @@ jar {
 dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
-    implementation 'com.exactpro.th2:common:3.40.0-dev-2582165524-SNAPSHOT'
+    implementation 'com.exactpro.th2:common:3.38.0-TH2-3789-2549112988-SNAPSHOT'
     implementation 'com.google.protobuf:protobuf-java-util'
     implementation "org.jetbrains:annotations"
+
+    implementation "com.exactpro.th2:cradle-core:$cradleVersion"
+    implementation "com.exactpro.th2:cradle-cassandra:$cradleVersion"
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.4.2'
     testImplementation 'org.mockito:mockito-junit-jupiter:3.6.0'

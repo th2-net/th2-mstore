@@ -37,6 +37,7 @@ import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -85,6 +86,17 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
         when(storageMock.getObjectsFactory()).thenReturn(cradleObjectsFactory);
         when(storageMock.storeGroupedMessageBatchAsync(any(StoredGroupMessageBatch.class), any(String.class))).thenReturn(completableFuture);
+
+        when(cradleManagerMock.getStorage()).thenReturn(storageMock);
+
+        StoredMessage mockedStoredMessage = mock(StoredMessage.class);
+        when(mockedStoredMessage.getTimestamp()).thenReturn(Instant.MIN);
+        try {
+            when(storageMock.getLastMessageIndex(any(), any())).thenReturn(-1L);
+            when(storageMock.getMessage(any())).thenReturn(mockedStoredMessage);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
 
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         when(routerMock.subscribeAll(any(), any())).thenReturn(mock(SubscriberMonitor.class));

@@ -20,8 +20,10 @@ import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 
@@ -46,7 +48,7 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
                         RawMessageMetadata.newBuilder()
                                 .setId(createMessageId(Instant.now(), sessionAlias, sessionGroup, direction, sequence, bookName))
                                 .build()
-                )
+                ).setBody(ByteString.copyFrom("test".getBytes(StandardCharsets.UTF_8)))
                 .build();
     }
 

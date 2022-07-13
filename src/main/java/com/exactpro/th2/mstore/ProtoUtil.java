@@ -22,6 +22,7 @@ import com.exactpro.cradle.messages.MessageToStoreBuilder;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
+import com.google.protobuf.ByteString;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
@@ -31,11 +32,11 @@ public class ProtoUtil {
         return createMessageToStore(
                 protoRawMessage.getMetadata().getId(),
                 protoRawMessage.getMetadata().getProtocol(),
-                protoRawMessage.toByteArray()
+                protoRawMessage.getBody()
         );
     }
 
-    private static MessageToStore createMessageToStore(MessageID messageId, String protocol, byte[] byteArray) throws CradleStorageException {
+    private static MessageToStore createMessageToStore(MessageID messageId, String protocol, ByteString body) throws CradleStorageException {
         return new MessageToStoreBuilder()
                 .bookId(new BookId(messageId.getBookName()))
                 .sessionAlias(messageId.getConnectionId().getSessionAlias())
@@ -43,7 +44,7 @@ public class ProtoUtil {
                 .timestamp(toInstant(messageId.getTimestamp()))
                 .sequence(messageId.getSequence())
                 .protocol(protocol)
-                .content(byteArray)
+                .content(body == null ? new byte[0] : body.toByteArray())
                 .build();
     }
 }

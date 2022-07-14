@@ -281,9 +281,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             if (previousKey == null) {
                 previousKey = sessionKey;
             }
-            if(!previousKey.equals(sessionKey)){
+            if(!previousKey.getSessionGroup().equals(sessionKey.getSessionGroup())){
                 throw new IllegalArgumentException(format(
-                        "Delivery contains different session keys. Message [%d] - sequence %d; Message [%d] - sequence %d",
+                        "Delivery contains different session groups. Message [%d] - sequence %d; Message [%d] - sequence %d",
                         i - 1,
                         previousKey,
                         i,

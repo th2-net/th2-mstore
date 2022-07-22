@@ -311,9 +311,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         SessionKey previousKey = null;
         if(messages.isEmpty()){
             return;
-        } else {
-            previousKey = createSessionKey(messages.get(0));
         }
+        previousKey = createSessionKey(messages.get(0));
+
 
         SequenceToTimestamp previousSequenceToTimestamp = getLastSequenceToTimeStamp(previousKey);
         for (int i = 0; i < messages.size(); i++) {

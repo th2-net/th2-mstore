@@ -328,6 +328,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
     private SequenceToTimestamp getLastSequenceToTimeStamp(SessionKey sessionKey){
+
         long lastSequence = -1L;
         try {
             lastSequence = cradleStorage.getLastMessageIndex(sessionKey.streamName, sessionKey.direction);

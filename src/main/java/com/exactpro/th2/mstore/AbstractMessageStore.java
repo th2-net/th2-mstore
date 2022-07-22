@@ -314,6 +314,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }else {
             return;
         }
+
         SequenceToTimestamp previousSequenceToTimestamp = getLastSequenceToTimeStamp(previousKey);
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);

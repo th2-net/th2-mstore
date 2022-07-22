@@ -309,9 +309,12 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
         SessionKey previousKey = null;
-        if(!messages.isEmpty()){
-            previousKey = createSessionKey(messages.get(0));
+        if(messages.isEmpty()){
+            return;
         }
+        previousKey = createSessionKey(messages.get(0));
+
+
         SequenceToTimestamp previousSequenceToTimestamp = getLastSequenceToTimeStamp(previousKey);
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);
@@ -328,6 +331,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
     private SequenceToTimestamp getLastSequenceToTimeStamp(SessionKey sessionKey){
+
         long lastSequence = -1L;
         try {
             lastSequence = cradleStorage.getLastMessageIndex(sessionKey.streamName, sessionKey.direction);

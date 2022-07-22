@@ -309,10 +309,10 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
         SessionKey previousKey = null;
-        if(!messages.isEmpty()){
-            previousKey = createSessionKey(messages.get(0));
-        }else {
+        if(messages.isEmpty()){
             return;
+        } else {
+            previousKey = createSessionKey(messages.get(0));
         }
 
         SequenceToTimestamp previousSequenceToTimestamp = getLastSequenceToTimeStamp(previousKey);

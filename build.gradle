@@ -64,8 +64,14 @@ dependencies {
 
     implementation "org.jetbrains:annotations"
 
-    implementation "com.exactpro.th2:cradle-core:$cradleVersion"
-    implementation "com.exactpro.th2:cradle-cassandra:$cradleVersion"
+    implementation("com.exactpro.th2:cradle-core:$cradleVersion") {
+        because('need to override common dep. remove in release')
+        force true
+    }
+    implementation("com.exactpro.th2:cradle-cassandra:$cradleVersion") {
+        because('need to override common dep. remove in release')
+        force true
+    }
 
     testImplementation 'org.junit.jupiter:junit-jupiter:5.4.2'
     testImplementation 'org.mockito:mockito-junit-jupiter:3.6.0'

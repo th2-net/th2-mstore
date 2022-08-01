@@ -66,7 +66,7 @@ Please see more details about this feature via [link](https://github.com/th2-net
 
 ## 4.0.0
 
-+ Update common version from `3.35.0` to `3.36.0`
++ Update common version from `3.35.0` to `3.39.3`
 + Update Cradle version from `2.21.0` to `3.1.1`. **Note, that the new Cradle version is not compatible with a previous version.**
   **The data migration is required in order to keep the current data and migrate to new Cradle version**
 

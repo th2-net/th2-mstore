@@ -7,7 +7,7 @@ plugins {
 
 ext {
     sharedDir       = file("${project.rootDir}/shared")
-    cradleVersion   = '3.1.2-dev-version-3.1-2664462627-SNAPSHOT'
+    cradleVersion   = '3.1.3-dev-version-3.1-2817244764-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -73,6 +73,7 @@ dependencies {
         force true
     }
 
+    implementation "org.slf4j:slf4j-api:1.7.36"
     testImplementation 'org.junit.jupiter:junit-jupiter:5.4.2'
     testImplementation 'org.mockito:mockito-junit-jupiter:3.6.0'
 }

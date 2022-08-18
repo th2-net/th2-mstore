@@ -7,7 +7,7 @@ plugins {
 
 ext {
     sharedDir       = file("${project.rootDir}/shared")
-    cradleVersion   = '5.0.0-dev-version-5-2745586346-SNAPSHOT'
+    cradleVersion   = '5.0.0-dev-version-5-2875687111-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -62,6 +62,7 @@ dependencies {
 
     implementation 'com.google.protobuf:protobuf-java-util'
 
+    implementation "org.slf4j:slf4j-api:1.7.36"
     implementation "org.jetbrains:annotations"
 
     implementation "com.exactpro.th2:cradle-core:$cradleVersion"

@@ -309,14 +309,17 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         try {
             lastSequence = cradleStorage.getLastMessageIndex(sessionKey.session, sessionKey.direction);
         } catch (IOException e) {
-            logger.error("Couldn't get sequence of last message from cradle: {}", e.getMessage());
+            logger.info("Couldn't get sequence of last message from cradle: {}", e.getMessage());
         }
         Instant lastTimeInstant = Instant.MIN;
         StoredMessageId storedMsgId = new StoredMessageId(sessionKey.session, sessionKey.direction, lastSequence);
         try {
-            lastTimeInstant = cradleStorage.getMessage(storedMsgId).getTimestamp();
+            StoredMessage message = cradleStorage.getMessage(storedMsgId);
+            if(message != null){
+                lastTimeInstant = message.getTimestamp();
+            }
         } catch (IOException e) {
-            logger.error("Couldn't get timestamp of last message from cradle: {}", e.getMessage());
+            logger.info("Couldn't get timestamp of last message from cradle: {}", e.getMessage());
         }
         return new SequenceToTimestamp(lastSequence, toTimestamp(lastTimeInstant));
     }

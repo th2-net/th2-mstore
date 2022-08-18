@@ -341,7 +341,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         Instant lastTimeInstant = Instant.MIN;
         StoredMessageId storedMsgId = new StoredMessageId(sessionKey.streamName, sessionKey.direction, lastSequence);
         try {
-            lastTimeInstant = cradleStorage.getMessage(storedMsgId).getTimestamp();
+            StoredMessage message = cradleStorage.getMessage(storedMsgId);
+            if (message != null)
+                lastTimeInstant = message.getTimestamp();
         } catch (IOException e) {
             logger.error("Couldn't get timestamp of last message from cradle: {}", e.getMessage());
         }

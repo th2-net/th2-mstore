@@ -13,28 +13,29 @@
 
 package com.exactpro.th2.mstore;
 
-import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
+import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.messages.MessageToStore;
+import com.exactpro.cradle.messages.StoredMessageBatch;
+import com.exactpro.th2.common.grpc.ConnectionID;
+import com.exactpro.th2.common.grpc.MessageID;
+import com.exactpro.th2.common.grpc.RawMessage;
+import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.common.message.MessageUtils;
+import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.QueueAttribute;
+import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.util.Timestamps;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.jetbrains.annotations.NotNull;
 
-import com.exactpro.cradle.CradleManager;
-import com.exactpro.cradle.messages.MessageToStore;
-import com.exactpro.cradle.messages.StoredMessageBatch;
-import com.exactpro.th2.common.grpc.MessageID;
-import com.exactpro.th2.common.grpc.RawMessage;
-import com.exactpro.th2.common.grpc.RawMessageBatch;
-import com.exactpro.th2.common.schema.message.MessageRouter;
-import com.exactpro.th2.common.schema.message.QueueAttribute;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
@@ -88,7 +89,21 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
 
     @Override
     protected String shortDebugString(RawMessageBatch batch) {
-        return formatRawMessageBatch(batch, false);
+        return batch.getMessagesList().stream()
+                .map(message -> {
+                    MessageID id = message.getMetadata().getId();
+                    ConnectionID connectionID = id.getConnectionId();
+                    Map<String, String> propertiesMap = message.getMetadata().getPropertiesMap();
+                    return connectionID.getSessionAlias() + ':' +
+                            id.getDirection().name() + ':' +
+                            id.getSequence() + ' ' +
+                            "pSize=" + propertiesMap.size() + ',' +
+                            "pLength=" + propertiesMap.entrySet().stream()
+                                            .mapToInt(entry -> entry.getKey().length() + entry.getValue().length())
+                                            .sum() + ',' +
+                            "bLength=" + message.getBody().size();
+
+                }).collect(Collectors.joining(","));
     }
 
     public static String formatRawMessageBatch(RawMessageBatch messageBatch, boolean full) {

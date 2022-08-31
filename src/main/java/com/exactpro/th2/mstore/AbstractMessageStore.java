@@ -162,7 +162,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     futuresToRemove.add(future);
                 } catch (TimeoutException | InterruptedException e) {
                     if (logger.isErrorEnabled()) {
-                        logger.error("{} - future related to {} batch can't be complited", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
+                        logger.error("{} - future related to {} batch can't be completed", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
                     }
                     boolean mayInterruptIfRunning = e instanceof InterruptedException;
                     future.cancel(mayInterruptIfRunning);
@@ -404,6 +404,11 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     protected abstract SessionKey createSessionKey(M message);
 
+    /**
+     * Returns a string that represents the batch in a concise way.
+     * @param batch the batch to get a concise string from.
+     * @return the new String
+     */
     protected abstract String shortDebugString(T batch);
 
     protected static class SessionKey {

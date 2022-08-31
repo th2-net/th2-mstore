@@ -14,10 +14,13 @@
 package com.exactpro.th2.mstore;
 
 import java.util.List;
+import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.google.protobuf.TextFormat;
+import com.exactpro.th2.common.grpc.ConnectionID;
 import org.jetbrains.annotations.NotNull;
 
 import com.exactpro.cradle.CradleManager;
@@ -82,6 +85,15 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
 
     @Override
     protected String shortDebugString(MessageBatch batch) {
-        return TextFormat.shortDebugString(batch);
+        return batch.getMessagesList().stream()
+                .map(message -> message.getMetadata().getId())
+                .map(id -> {
+                    ConnectionID connectionID = id.getConnectionId();
+                    StringJoiner joiner = new StringJoiner(":");
+                    joiner.add(connectionID.getSessionAlias());
+                    joiner.add(id.getDirection().name());
+                    joiner.add(String.valueOf(id.getSequence()));
+                    return joiner.toString();
+                }).collect(Collectors.joining(","));
     }
 }

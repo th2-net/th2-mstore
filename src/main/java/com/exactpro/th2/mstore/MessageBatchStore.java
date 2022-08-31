@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -19,6 +19,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import com.google.protobuf.TextFormat;
 import com.exactpro.th2.common.grpc.ConnectionID;
 import org.jetbrains.annotations.NotNull;
 
@@ -34,6 +35,7 @@ import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 
+@Deprecated(since = "5.0.0")
 public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.PARSED)
             .map(QueueAttribute::toString)
@@ -53,27 +55,16 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     }
 
     @Override
-    protected String formatOriginalBatch(MessageBatch originalBatch) {
-        return originalBatch.getMessagesList().stream()
-                .map(message -> message.getMetadata().getId())
-                .map(id -> {
-                    ConnectionID connectionID = id.getConnectionId();
-                    StringJoiner joiner = new StringJoiner(":");
-                    joiner.add(connectionID.getSessionAlias());
-                    joiner.add(id.getDirection().name());
-                    joiner.add(String.valueOf(id.getSequence()));
-                    return joiner.toString();
-                }).collect(Collectors.joining(","));
-    }
-
-    @Override
     protected CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch) {
         return cradleStorage.storeProcessedMessageBatchAsync(storedMessageBatch);
     }
 
     @Override
-    protected long extractSequence(Message message) {
-        return message.getMetadata().getId().getSequence();
+    protected SequenceToTimestamp extractSequenceToTimestamp(Message message) {
+        return new SequenceToTimestamp(
+                message.getMetadata().getId().getSequence(),
+                message.getMetadata().getTimestamp()
+        );
     }
 
     @Override
@@ -90,5 +81,19 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     @Override
     protected List<Message> getMessages(MessageBatch delivery) {
         return delivery.getMessagesList();
+    }
+
+    @Override
+    protected String shortDebugString(MessageBatch batch) {
+        return batch.getMessagesList().stream()
+                .map(message -> message.getMetadata().getId())
+                .map(id -> {
+                    ConnectionID connectionID = id.getConnectionId();
+                    StringJoiner joiner = new StringJoiner(":");
+                    joiner.add(connectionID.getSessionAlias());
+                    joiner.add(id.getDirection().name());
+                    joiner.add(String.valueOf(id.getSequence()));
+                    return joiner.toString();
+                }).collect(Collectors.joining(","));
     }
 }

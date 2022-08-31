@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2020 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -13,10 +13,12 @@
 
 package com.exactpro.th2.mstore;
 
+import java.time.Instant;
 import java.util.List;
 
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.serialization.MessagesSizeCalculator;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageBatch;
@@ -24,6 +26,8 @@ import com.exactpro.th2.common.grpc.MessageMetadata;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.Timestamp;
+
+import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 
 public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, Message> {
     TestParsedMessageStore() {
@@ -37,21 +41,21 @@ public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, M
     }
 
     @Override
-    protected Message createMessage(String session, Direction direction, long sequence) {
+    protected Message createMessage(String session, Direction direction, long sequence, Instant timestamp) {
         return Message.newBuilder()
                 .setMetadata(
                         MessageMetadata.newBuilder()
                                 .setMessageType("A")
                                 .setId(createMessageId(session, direction, sequence))
-                                .setTimestamp(createTimestamp())
+                                .setTimestamp(toTimestamp(timestamp))
                                 .build()
                 )
                 .build();
     }
 
     @Override
-    protected long extractSize(Message message) {
-        return message.toByteArray().length;
+    protected long extractSizeInBatch(Message message) {
+        return MessagesSizeCalculator.calculateMessageSizeInBatch(ProtoUtil.toCradleMessage(message));
     }
 
     @Override

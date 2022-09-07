@@ -13,43 +13,10 @@
 
 package com.exactpro.th2.mstore;
 
-import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
-import static com.exactpro.th2.common.util.StorageUtils.toInstant;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.timeout;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-import java.io.IOException;
-import java.time.Instant;
-import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.stream.Collectors;
-import java.util.stream.LongStream;
-
-import com.exactpro.cradle.messages.StoredMessage;
-import org.jetbrains.annotations.NotNull;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleObjectsFactory;
 import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.cradle.testevents.StoredTestEventBatch;
 import com.exactpro.cradle.utils.CradleStorageException;
@@ -62,6 +29,25 @@ import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Timestamp;
+import org.jetbrains.annotations.NotNull;
+import org.junit.jupiter.api.*;
+import org.mockito.ArgumentCaptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.IOException;
+import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
+import java.util.stream.LongStream;
+
+import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
+import static com.exactpro.th2.common.util.StorageUtils.toInstant;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
     private final Logger logger = LoggerFactory.getLogger(getClass());
@@ -117,7 +103,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
 
     @AfterEach
     void tearDown() {
-        messageStore.dispose();
+        messageStore.close();
     }
 
     protected abstract AbstractMessageStore<T, M> createStore(CradleManager cradleManagerMock, MessageRouter<T> routerMock, MessageStoreConfiguration configuration);
@@ -427,65 +413,6 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
             assertStoredMessageBatch(value.get(0), "test", Direction.FIRST, firstDelivery.size());
             assertStoredMessageBatch(value.get(1), "test", Direction.FIRST, secondDelivery.size());
         }
-    }
-
-    @Test
-    @DisplayName("Close message store when feature is complited")
-    void testComplitedFutureComplited() throws InterruptedException, ExecutionException, TimeoutException {
-        M first = createMessage("test", Direction.FIRST, 1);
-
-        messageStore.handle(deliveryOf(first));
-        messageStore.dispose();
-
-        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
-    }
-
-    @Test
-    @DisplayName("Close message store when feature throws TimeoutException")
-    void testComplitedFutureTimeoutException() throws InterruptedException, ExecutionException, TimeoutException {
-        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(TimeoutException.class);
-        when(completableFuture.isDone()).thenReturn(false, true);
-        when(completableFuture.cancel(any(boolean.class))).thenReturn(false);
-
-        M first = createMessage("test", Direction.FIRST, 1);
-
-        messageStore.handle(deliveryOf(first));
-        messageStore.dispose();
-
-        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
-        verify(completableFuture, times(2)).isDone();
-        verify(completableFuture).cancel(false);
-    }
-
-    @Test
-    @DisplayName("Close message store when feature throws InterruptedException")
-    void testComplitedFutureInterruptedException() throws InterruptedException, ExecutionException, TimeoutException {
-        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(InterruptedException.class);
-        when(completableFuture.isDone()).thenReturn(false, true);
-        when(completableFuture.cancel(any(boolean.class))).thenReturn(false);
-
-        M first = createMessage("test", Direction.FIRST, 1);
-
-        messageStore.handle(deliveryOf(first));
-        messageStore.dispose();
-
-        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
-        verify(completableFuture).isDone();
-        verify(completableFuture).cancel(true);
-    }
-
-    @Test
-    @DisplayName("Close message store when feature throws ExecutionException")
-    void testComplitedFutureExecutionException() throws InterruptedException, ExecutionException, TimeoutException {
-        when(completableFuture.get(any(long.class), any(TimeUnit.class))).thenThrow(ExecutionException.class);
-
-        M first = createMessage("test", Direction.FIRST, 1);
-
-        messageStore.handle(deliveryOf(first));
-        messageStore.dispose();
-
-        verify(completableFuture).get(any(long.class), any(TimeUnit.class));
-        verify(completableFuture).isDone();
     }
 
     protected interface CradleStoreFunction {

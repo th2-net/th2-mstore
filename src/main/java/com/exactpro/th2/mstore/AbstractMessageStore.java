@@ -3,7 +3,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -12,41 +14,6 @@
  */
 
 package com.exactpro.th2.mstore;
-
-import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
-import static com.exactpro.th2.common.util.StorageUtils.toInstant;
-import static com.exactpro.th2.mstore.SequenceToTimestamp.SEQUENCE_TO_TIMESTAMP_COMPARATOR;
-import static java.lang.String.format;
-import static java.util.Objects.requireNonNull;
-import static java.util.function.BinaryOperator.maxBy;
-import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
-
-import java.io.IOException;
-import java.time.Instant;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
-
-import org.apache.commons.lang3.builder.EqualsBuilder;
-import org.apache.commons.lang3.builder.HashCodeBuilder;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
@@ -59,17 +26,42 @@ import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
+import com.exactpro.th2.taskutils.FutureTracker;
 import com.google.protobuf.GeneratedMessageV3;
+import org.apache.commons.lang3.builder.EqualsBuilder;
+import org.apache.commons.lang3.builder.HashCodeBuilder;
+import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
+import java.io.IOException;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
+import static com.exactpro.th2.common.util.StorageUtils.toInstant;
+import static com.exactpro.th2.mstore.SequenceToTimestamp.SEQUENCE_TO_TIMESTAMP_COMPARATOR;
+import static java.lang.String.format;
+import static java.util.Objects.requireNonNull;
+import static java.util.function.BinaryOperator.maxBy;
+import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
+
+public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(AbstractMessageStore.class);
 
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessionToHolder = new ConcurrentHashMap<>();
     private final MessageStoreConfiguration configuration;
-    private final Map<CompletableFuture<Void>, StoredMessageBatch> asyncStoreFutures = new ConcurrentHashMap<>();
-    private volatile ScheduledFuture<?> future;
+    private final FutureTracker<Void> futures;
+    private volatile ScheduledFuture<?> drainFuture;
     private final MessageRouter<T> router;
     private SubscriberMonitor monitor;
 
@@ -79,8 +71,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             @NotNull MessageStoreConfiguration configuration
     ) {
         this.router = requireNonNull(router, "Message router can't be null");
-        cradleStorage = requireNonNull(cradleManager.getStorage(), "Cradle storage can't be null");
+        this.cradleStorage = requireNonNull(cradleManager.getStorage(), "Cradle storage can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
+        this.futures = new FutureTracker<>();
     }
 
     public void start() {
@@ -99,11 +92,11 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                 throw new RuntimeException("Can not find queues for subscriber");
             }
         }
-        future = drainExecutor.scheduleAtFixedRate(this::drainByScheduler, configuration.getDrainInterval(), configuration.getDrainInterval(), TimeUnit.MILLISECONDS);
+        drainFuture = drainExecutor.scheduleAtFixedRate(this::drainByScheduler, configuration.getDrainInterval(), configuration.getDrainInterval(), TimeUnit.MILLISECONDS);
         logger.info("Drain scheduler is started");
     }
 
-    public void dispose() {
+    public void close() {
         if (monitor != null) {
             try {
                 monitor.unsubscribe();
@@ -112,9 +105,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             }
         }
         try {
-            ScheduledFuture<?> future = this.future;
+            ScheduledFuture<?> future = this.drainFuture;
             if (future != null) {
-                this.future = null;
+                this.drainFuture = null;
                 future.cancel(false);
             }
         } catch (Exception ex) {
@@ -143,41 +136,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             }
         }
 
-        awaitFutures();
+        futures.awaitRemaining();
     }
 
-    private void awaitFutures() {
-        logger.debug("Waiting for futures completion");
-        Collection<CompletableFuture<Void>> futuresToRemove = new HashSet<>();
-        while (!(asyncStoreFutures.isEmpty() || Thread.currentThread().isInterrupted())) {
-            logger.info("Wait for the completion of {} futures", asyncStoreFutures.size());
-            futuresToRemove.clear();
-            asyncStoreFutures.forEach((future, batch) -> {
-                try {
-                    if (!future.isDone()) {
-                        future.get(1, TimeUnit.SECONDS);
-                    }
-                    futuresToRemove.add(future);
-                } catch (CancellationException | ExecutionException e) {
-                    if (logger.isWarnEnabled()) {
-                        logger.warn("{} - storing {} batch is failure", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
-                    }
-                    futuresToRemove.add(future);
-                } catch (TimeoutException | InterruptedException e) {
-                    if (logger.isErrorEnabled()) {
-                        logger.error("{} - future related to {} batch can't be complited", getClass().getSimpleName(), formatStoredMessageBatch(batch, false), e);
-                    }
-                    boolean mayInterruptIfRunning = e instanceof InterruptedException;
-                    future.cancel(mayInterruptIfRunning);
-
-                    if (mayInterruptIfRunning) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-            });
-            asyncStoreFutures.keySet().removeAll(futuresToRemove);
-        }
-    }
 
     public final void handle(T messageBatch) {
         try {
@@ -256,24 +217,14 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     private void storeBatchAsync(StoredMessageBatch holtBatch) {
         CompletableFuture<Void> future = store(holtBatch);
-        asyncStoreFutures.put(future, holtBatch);
+        futures.track(future);
         future.whenCompleteAsync((value, exception) -> {
-            try {
-                if (exception == null) {
-                    if (logger.isDebugEnabled()) {
-                        logger.debug("{} - batch stored: {}", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true));
-                    }
-                } else {
-                    if (logger.isErrorEnabled()) {
-                        logger.error("{} - batch storing is failure: {}", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true), exception);
-                    }
+            if (exception == null) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("{} - batch stored: {}", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true));
                 }
-            } finally {
-                if (asyncStoreFutures.remove(future) == null) {
-                    if (logger.isWarnEnabled()) {
-                        logger.warn("{} - future related to batch {} already removed", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true));
-                    }
-                }
+            } else {
+                logger.error("{} - batch storing is failure: {}", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true), exception);
             }
         });
     }

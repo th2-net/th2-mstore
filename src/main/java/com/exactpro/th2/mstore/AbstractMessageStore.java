@@ -51,19 +51,18 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final Map<SessionKey, SessionData> sessionToHolder = new ConcurrentHashMap<>();
+    private final Map<SessionKey, SessionData> sessions = new ConcurrentHashMap<>();
     private final Configuration configuration;
     private volatile ScheduledFuture<?> drainFuture;
     private final MessageRouter<T> router;
     private SubscriberMonitor monitor;
     private final Persistor<StoredMessageBatch> persistor;
 
-    public AbstractMessageStore(
-            @NotNull MessageRouter<T> router,
-            @NotNull CradleStorage cradleStorage,
-            @NotNull Persistor<StoredMessageBatch> persistor,
-            @NotNull Configuration configuration
-    ) {
+    public AbstractMessageStore(@NotNull MessageRouter<T> router,
+                                @NotNull CradleStorage cradleStorage,
+                                @NotNull Persistor<StoredMessageBatch> persistor,
+                                @NotNull Configuration configuration ) {
+
         this.router = requireNonNull(router, "Message router can't be null");
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.persistor = requireNonNull(persistor, "Persistor can't be null");
@@ -147,10 +146,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             }
             M firstMessage = messages.get(0);
             M lastMessage = messages.get(messages.size() - 1);
-            SessionData sessionData = sessionToHolder.computeIfAbsent(
-                    createSessionKey(lastMessage),
-                    ignore -> new SessionData(cradleStorage.getObjectsFactory()::createMessageBatch)
-            );
+            SessionData sessionData = sessions.computeIfAbsent( createSessionKey(lastMessage),
+                                    ignored -> new SessionData(cradleStorage.getObjectsFactory()::createMessageBatch));
 
             MessageOrderingProperties first = extractOrderingProperties(firstMessage);
             MessageOrderingProperties last = extractOrderingProperties(lastMessage);
@@ -158,15 +155,13 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             if (first.sequenceIsLessOrEquals(previousBatchLast)) {
                 logger.error("Received batch with disordered sequence number. Last sequence: {}, current batch: {}",
                                 previousBatchLast.getSequence(),
-                                shortDebugString(messageBatch)
-                );
+                                shortDebugString(messageBatch));
                 return;
             }
             if (first.timestampIsLess(previousBatchLast)) {
                 logger.error("Received batch with disordered timestamp. Last timestamp: {}, current batch: {}",
                                 toInstant(previousBatchLast.getTimestamp()),
-                                shortDebugString(messageBatch)
-                );
+                                shortDebugString(messageBatch));
                 return;
             }
             storeMessages(messages, sessionData.getBatchHolder());
@@ -240,8 +235,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         SessionKey firstSessionKey = createSessionKey(messages.get(0));
         MessageOrderingProperties lastOrderingProperties;
 
-        if (sessionToHolder.containsKey(firstSessionKey)) {
-            lastOrderingProperties = sessionToHolder.get(firstSessionKey).getLastOrderingProperties();
+        if (sessions.containsKey(firstSessionKey)) {
+            lastOrderingProperties = sessions.get(firstSessionKey).getLastOrderingProperties();
         } else {
             lastOrderingProperties = loadLastOrderingProperties(firstSessionKey);
         }
@@ -327,7 +322,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
     private void drain(boolean force) {
-        sessionToHolder.forEach((key, sessionData) -> drainHolder(key, sessionData.getBatchHolder(), force));
+        sessions.forEach((key, sessionData) -> drainHolder(key, sessionData.getBatchHolder(), force));
     }
 
     private void drainHolder(SessionKey key, SessionBatchHolder holder, boolean force) {

@@ -136,14 +136,13 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     public final void handle(T messageBatch) {
         try {
-            verifyBatch(messageBatch);
             List<M> messages = getMessages(messageBatch);
             if (messages.isEmpty()) {
-                if (logger.isWarnEnabled()) {
+                if (logger.isWarnEnabled())
                     logger.warn("Empty batch has been received {}", shortDebugString(messageBatch));
-                }
                 return;
             }
+            verifyBatch(messages);
             M firstMessage = messages.get(0);
             M lastMessage = messages.get(messages.size() - 1);
             SessionData sessionData = sessions.computeIfAbsent( createSessionKey(lastMessage),
@@ -222,15 +221,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         return builder.toString();
     }
 
-    /**
-     * Checks that the delivery contains all messages related to one session
-     * and that each message has sequence number greater than the previous one.
-     * @param delivery the delivery received from router
-     */
-    private void verifyBatch(T delivery) {
-        List<M> messages = getMessages(delivery);
-        if(messages.isEmpty())
-            return;
+    private void verifyBatch(List<M> messages) {
 
         SessionKey firstSessionKey = createSessionKey(messages.get(0));
         MessageOrderingProperties lastOrderingProperties;

@@ -24,8 +24,6 @@ import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.google.protobuf.GeneratedMessageV3;
-import org.apache.commons.lang3.builder.EqualsBuilder;
-import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -340,7 +338,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
         if (batch.isEmpty()) {
             logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing by scheduler",
-                    key.getStreamName(), key.getDirection());
+                    key.streamName, key.direction);
             return;
         }
         try {
@@ -364,55 +362,34 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     protected abstract String shortDebugString(T batch);
 
-    protected static class SessionKey {
-        private final String streamName;
-        private final Direction direction;
+    static class SessionKey {
+        final String streamName;
+        final Direction direction;
 
-        public SessionKey(String streamName, Direction direction) {
+        SessionKey(String streamName, Direction direction) {
             this.streamName = requireNonNull(streamName, "'Stream name' parameter");
             this.direction = requireNonNull(direction, "'Direction' parameter");
         }
 
-        public String getStreamName() {
-            return streamName;
-        }
-
-        public Direction getDirection() {
-            return direction;
-        }
-
         @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
+        public boolean equals(Object other) {
+            if (this == other)
                 return true;
-            }
-
-            if (obj == null || getClass() != obj.getClass()) {
+            if (!(other instanceof SessionKey))
                 return false;
-            }
-
-            SessionKey that = (SessionKey)obj;
-
-            return new EqualsBuilder()
-                    .append(streamName, that.streamName)
-                    .append(direction, that.direction)
-                    .isEquals();
+            SessionKey that = (SessionKey)other;
+            return Objects.equals(this.streamName, that.streamName)
+                    && Objects.equals(this.direction, that.direction);
         }
 
         @Override
         public int hashCode() {
-            return new HashCodeBuilder()
-                    .append(streamName)
-                    .append(direction)
-                    .toHashCode();
+            return Objects.hash(streamName, direction);
         }
 
         @Override
         public String toString() {
-            return new ToStringBuilder(this, NO_CLASS_NAME_STYLE)
-                    .append("streamName", streamName)
-                    .append("direction", direction)
-                    .toString();
+            return String.format("{streamName=\"%s\", direction=\"%s\"}", streamName, direction);
         }
     }
 

@@ -42,7 +42,6 @@ import java.util.stream.Collectors;
 import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 import static java.lang.String.format;
-import static java.util.Objects.requireNonNull;
 import static java.util.function.BinaryOperator.maxBy;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
@@ -63,9 +62,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                                 @NotNull Persistor<StoredMessageBatch> persistor,
                                 @NotNull Configuration configuration ) {
 
-        this.router = requireNonNull(router, "Message router can't be null");
-        this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
-        this.persistor = requireNonNull(persistor, "Persistor can't be null");
+        this.router = Objects.requireNonNull(router, "Message router can't be null");
+        this.cradleStorage = Objects.requireNonNull(cradleStorage, "Cradle storage can't be null");
+        this.persistor = Objects.requireNonNull(persistor, "Persistor can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
     }
 
@@ -163,7 +162,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                                 shortDebugString(messageBatch));
                 return;
             }
-            storeMessages(messages, sessionData.getBatchHolder());
+            storeMessages(messages, sessionData);
         } catch (Exception ex) {
             if (logger.isErrorEnabled()) {
                 logger.error("Cannot handle the batch of type {} message id {}", messageBatch.getClass(), shortDebugString(messageBatch), ex);
@@ -171,7 +170,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
 
-    protected void storeMessages(List<M> messagesList, SessionBatchHolder holder) throws Exception {
+    protected void storeMessages(List<M> messagesList, SessionData sessionData) throws Exception {
         logger.debug("Process {} messages started", messagesList.size());
 
         StoredMessageBatch storedMessageBatch = cradleStorage.getObjectsFactory().createMessageBatch();
@@ -180,6 +179,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             storedMessageBatch.addMessage(messageToStore);
         }
         StoredMessageBatch holtBatch;
+        SessionBatchHolder holder = sessionData.getBatchHolder();
         synchronized (holder) {
             if (holder.add(storedMessageBatch)) {
                 if (logger.isDebugEnabled()) {
@@ -190,12 +190,11 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             holtBatch = holder.resetAndUpdate(storedMessageBatch);
         }
 
-        if (holtBatch.isEmpty()) {
+        if (holtBatch.isEmpty() && logger.isDebugEnabled()) {
             logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing",
                     storedMessageBatch.getStreamName(), storedMessageBatch.getDirection());
-        } else {
+        } else
             persistor.persist(holtBatch);
-        }
     }
 
     public static String formatStoredMessageBatch(StoredMessageBatch storedMessageBatch, boolean full) {
@@ -356,8 +355,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         final Direction direction;
 
         SessionKey(String streamName, Direction direction) {
-            this.streamName = requireNonNull(streamName, "'Stream name' parameter");
-            this.direction = requireNonNull(direction, "'Direction' parameter");
+            this.streamName = Objects.requireNonNull(streamName, "'Stream name' parameter");
+            this.direction = Objects.requireNonNull(direction, "'Direction' parameter");
         }
 
         @Override

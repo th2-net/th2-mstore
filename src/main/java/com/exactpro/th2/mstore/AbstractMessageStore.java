@@ -41,7 +41,6 @@ import java.util.stream.Collectors;
 
 import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
-import static com.exactpro.th2.mstore.SequenceToTimestamp.SEQUENCE_TO_TIMESTAMP_COMPARATOR;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.BinaryOperator.maxBy;
@@ -87,7 +86,10 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                 throw new RuntimeException("Can not find queues for subscriber");
             }
         }
-        drainFuture = drainExecutor.scheduleAtFixedRate(this::drainByScheduler, configuration.getDrainInterval(), configuration.getDrainInterval(), TimeUnit.MILLISECONDS);
+        drainFuture = drainExecutor.scheduleAtFixedRate(this::drainByScheduler,
+                                                        configuration.getDrainInterval(),
+                                                        configuration.getDrainInterval(),
+                                                        TimeUnit.MILLISECONDS);
         logger.info("Drain scheduler is started");
     }
 
@@ -150,27 +152,21 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     ignore -> new SessionData(cradleStorage.getObjectsFactory()::createMessageBatch)
             );
 
-            SequenceToTimestamp first = extractSequenceToTimestamp(firstMessage);
-            SequenceToTimestamp last = extractSequenceToTimestamp(lastMessage);
-            SequenceToTimestamp previousBatchLast = sessionData.getAndUpdateLastSequenceToTimestamp(last);
+            MessageOrderingProperties first = extractOrderingProperties(firstMessage);
+            MessageOrderingProperties last = extractOrderingProperties(lastMessage);
+            MessageOrderingProperties previousBatchLast = sessionData.getAndUpdateOrderingProperties(last);
             if (first.sequenceIsLessOrEquals(previousBatchLast)) {
-                if (logger.isErrorEnabled()) {
-                    logger.error(
-                            "Found batch with less or equal sequence. Previous sequence: {}, current batch: {}",
-                            previousBatchLast.getSequence(),
-                            shortDebugString(messageBatch)
-                    );
-                }
+                logger.error("Received batch with disordered sequence number. Last sequence: {}, current batch: {}",
+                                previousBatchLast.getSequence(),
+                                shortDebugString(messageBatch)
+                );
                 return;
             }
             if (first.timestampIsLess(previousBatchLast)) {
-                if (logger.isErrorEnabled()) {
-                    logger.error(
-                            "Found batch with less timestamp. Previous timestamp: {}, current batch: {}",
-                            toInstant(previousBatchLast.getTimestamp()),
-                            shortDebugString(messageBatch)
-                    );
-                }
+                logger.error("Received batch with disordered timestamp. Last timestamp: {}, current batch: {}",
+                                toInstant(previousBatchLast.getTimestamp()),
+                                shortDebugString(messageBatch)
+                );
                 return;
             }
             storeMessages(messages, sessionData.getBatchHolder());
@@ -238,49 +234,58 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
      */
     private void verifyBatch(T delivery) {
         List<M> messages = getMessages(delivery);
-        SessionKey previousKey = null;
-        if(messages.isEmpty()){
+        if(messages.isEmpty())
             return;
+
+        SessionKey firstSessionKey = createSessionKey(messages.get(0));
+        MessageOrderingProperties lastOrderingProperties;
+
+        if (sessionToHolder.containsKey(firstSessionKey)) {
+            lastOrderingProperties = sessionToHolder.get(firstSessionKey).getLastOrderingProperties();
+        } else {
+            lastOrderingProperties = loadLastOrderingProperties(firstSessionKey);
         }
-        previousKey = createSessionKey(messages.get(0));
 
-
-        SequenceToTimestamp previousSequenceToTimestamp = getLastSequenceToTimeStamp(previousKey);
         for (int i = 0; i < messages.size(); i++) {
             M message = messages.get(i);
-            SessionKey sessionKey = createSessionKey(message);
-            if (previousKey == null) {
-                previousKey = sessionKey;
-            } else {
-                verifySession(i, previousKey, sessionKey);
-            }
 
-            SequenceToTimestamp currentSequenceToTimestamp = extractSequenceToTimestamp(message);
-            verifySequenceToTimestamp(i, previousSequenceToTimestamp, currentSequenceToTimestamp);
-            previousSequenceToTimestamp = currentSequenceToTimestamp;
+            SessionKey sessionKey = createSessionKey(message);
+            verifySession(i, firstSessionKey, sessionKey);
+
+            MessageOrderingProperties orderingProperties = extractOrderingProperties(message);
+            verifyOrderingProperties(i, lastOrderingProperties, orderingProperties);
+
+            lastOrderingProperties = orderingProperties;
         }
     }
-    private SequenceToTimestamp getLastSequenceToTimeStamp(SessionKey sessionKey){
 
-        long lastSequence = -1L;
+
+    private MessageOrderingProperties loadLastOrderingProperties(SessionKey sessionKey){
+
+        long lastMessageSequence;
         try {
-            lastSequence = cradleStorage.getLastMessageIndex(sessionKey.streamName, sessionKey.direction);
+            lastMessageSequence = cradleStorage.getLastMessageIndex(sessionKey.streamName, sessionKey.direction);
         } catch (IOException e) {
             logger.error("Couldn't get sequence of last message from cradle: {}", e.getMessage());
+            return MessageOrderingProperties.MIN_VALUE;
         }
-        Instant lastTimeInstant = Instant.MIN;
-        StoredMessageId storedMsgId = new StoredMessageId(sessionKey.streamName, sessionKey.direction, lastSequence);
+
+        Instant lastMessageTimestamp;
+        StoredMessageId storedMessageId = new StoredMessageId(sessionKey.streamName, sessionKey.direction, lastMessageSequence);
         try {
-            StoredMessage message = cradleStorage.getMessage(storedMsgId);
+            StoredMessage message = cradleStorage.getMessage(storedMessageId);
             if (message != null)
-                lastTimeInstant = message.getTimestamp();
+                lastMessageTimestamp = message.getTimestamp();
+            else
+                return MessageOrderingProperties.MIN_VALUE;
         } catch (IOException e) {
             logger.error("Couldn't get timestamp of last message from cradle: {}", e.getMessage());
+            return MessageOrderingProperties.MIN_VALUE;
         }
-        return new SequenceToTimestamp(lastSequence, toTimestamp(lastTimeInstant));
+        return new MessageOrderingProperties(lastMessageSequence, toTimestamp(lastMessageTimestamp));
     }
 
-    private static void verifySession(int messageIndex, SessionKey previousKey, SessionKey sessionKey) {
+    private void verifySession(int messageIndex, SessionKey previousKey, SessionKey sessionKey) {
         if (!previousKey.equals(sessionKey)) {
             throw new IllegalArgumentException(format(
                     "Delivery contains different sessions. Message [%d] - session %s; Message [%d] - session %s",
@@ -292,11 +297,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
 
-    private static void verifySequenceToTimestamp(
-            int messageIndex,
-            SequenceToTimestamp previous,
-            SequenceToTimestamp current
-    ) {
+    private void verifyOrderingProperties(int messageIndex, MessageOrderingProperties previous,
+                                                            MessageOrderingProperties current ) {
+
         if (current.sequenceIsLessOrEquals(previous)) {
             throw new IllegalArgumentException(format(
                     "Delivery contains unordered messages. Message [%d] - sequence %d; Message [%d] - sequence %d",
@@ -356,7 +359,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     protected abstract MessageToStore convert(M originalMessage);
 
-    protected abstract SequenceToTimestamp extractSequenceToTimestamp(M message);
+    protected abstract MessageOrderingProperties extractOrderingProperties(M message);
 
     protected abstract SessionKey createSessionKey(M message);
 
@@ -394,16 +397,21 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
     private static class SessionData {
-        private final AtomicReference<SequenceToTimestamp> lastSequenceToTimestamp = new AtomicReference<>(SequenceToTimestamp.MIN);
+        private final AtomicReference<MessageOrderingProperties> lastOrderingProperties =
+                                            new AtomicReference<>(MessageOrderingProperties.MIN_VALUE);
 
         private final SessionBatchHolder batchHolder;
 
         SessionData(Supplier<StoredMessageBatch> batchSupplier) {
-            batchHolder = new SessionBatchHolder(requireNonNull(batchSupplier, "'batchSupplier' cannot be null"));
+            batchHolder = new SessionBatchHolder(batchSupplier);
         }
 
-        public SequenceToTimestamp getAndUpdateLastSequenceToTimestamp(SequenceToTimestamp newLastSequenceToTimestamp) {
-            return lastSequenceToTimestamp.getAndAccumulate(newLastSequenceToTimestamp, maxBy(SEQUENCE_TO_TIMESTAMP_COMPARATOR));
+        public MessageOrderingProperties getAndUpdateOrderingProperties(MessageOrderingProperties orderingProperties) {
+            return lastOrderingProperties.getAndAccumulate(orderingProperties, maxBy(MessageOrderingProperties.COMPARATOR));
+        }
+
+        public MessageOrderingProperties getLastOrderingProperties() {
+            return lastOrderingProperties.get();
         }
 
         public SessionBatchHolder getBatchHolder() {

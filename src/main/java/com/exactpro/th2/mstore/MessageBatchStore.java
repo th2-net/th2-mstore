@@ -52,8 +52,8 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     }
 
     @Override
-    protected SequenceToTimestamp extractSequenceToTimestamp(Message message) {
-        return new SequenceToTimestamp(
+    protected MessageOrderingProperties extractOrderingProperties(Message message) {
+        return new MessageOrderingProperties(
                 message.getMetadata().getId().getSequence(),
                 message.getMetadata().getTimestamp()
         );

@@ -58,8 +58,8 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
     }
 
     @Override
-    protected SequenceToTimestamp extractSequenceToTimestamp(RawMessage message) {
-        return new SequenceToTimestamp(
+    protected MessageOrderingProperties extractOrderingProperties(RawMessage message) {
+        return new MessageOrderingProperties(
                 message.getMetadata().getId().getSequence(),
                 message.getMetadata().getTimestamp()
         );

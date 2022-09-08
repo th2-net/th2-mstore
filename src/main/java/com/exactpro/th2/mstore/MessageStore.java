@@ -16,9 +16,9 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.CradleStorage;
 import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,44 +34,39 @@ public class MessageStore implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MessageStore.class);
 
+    private final MessageBatchPersistors persistor;
     private final MessageBatchStore parsedStore;
     private final RawMessageBatchStore rawStore;
     private final CradleManager cradleManager;
 
-    public MessageStore(AbstractCommonFactory factory) {
+    public MessageStore(AbstractCommonFactory factory, Deque<AutoCloseable> resources) {
         cradleManager = factory.getCradleManager();
-        MessageStoreConfiguration configuration = factory.getCustomConfiguration(MessageStoreConfiguration.class);
-        rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(), cradleManager, configuration);
-        parsedStore = new MessageBatchStore(factory.getMessageRouterParsedBatch(), cradleManager, configuration);
+        Configuration configuration = factory.getCustomConfiguration(Configuration.class);
+        CradleStorage storage = cradleManager.getStorage();
+
+        persistor = new MessageBatchPersistors(configuration, storage);
+        resources.add(persistor);
+
+        rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(),
+                                            storage,
+                                            persistor.getRawPersistor(),
+                                            configuration);
+        resources.add(rawStore);
+
+        parsedStore = new MessageBatchStore(factory.getMessageRouterParsedBatch(),
+                                            storage,
+                                            persistor.getParsedPersistor(),
+                                            configuration);
+        resources.add(parsedStore);
     }
 
-    public void start() {
-        try {
-            parsedStore.start();
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot start storage for parsed messages", e);
-        }
-
-        try {
-            rawStore.start();
-            LOGGER.info("Message store start successfully");
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot start storage for raw messages", e);
-        }
+    public void start() throws Exception {
+        persistor.start();
+        parsedStore.start();
+        rawStore.start();
     }
 
     public void close () {
-        try {
-            parsedStore.close();
-        } catch (Exception e) {
-            LOGGER.error("Cannot dispose storage for parsed messages", e);
-        }
-
-        try {
-            rawStore.close();
-        } catch (Exception e) {
-            LOGGER.error("Cannot dispose storage for raw messages", e);
-        }
 
         try {
             cradleManager.dispose();
@@ -93,7 +88,7 @@ public class MessageStore implements AutoCloseable {
             CommonFactory factory = CommonFactory.createFromArguments(args);
             resources.add(factory);
 
-            MessageStore store = new MessageStore(factory);
+            MessageStore store = new MessageStore(factory, resources);
             resources.add(store);
             store.start();
 

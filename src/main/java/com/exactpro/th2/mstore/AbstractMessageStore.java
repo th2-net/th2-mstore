@@ -15,18 +15,14 @@
 
 package com.exactpro.th2.mstore;
 
-import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.Direction;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.cradle.messages.StoredMessageId;
-import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
-import com.exactpro.th2.taskutils.FutureTracker;
 import com.google.protobuf.GeneratedMessageV3;
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
@@ -59,21 +55,22 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessionToHolder = new ConcurrentHashMap<>();
-    private final MessageStoreConfiguration configuration;
-    private final FutureTracker<Void> futures;
+    private final Configuration configuration;
     private volatile ScheduledFuture<?> drainFuture;
     private final MessageRouter<T> router;
     private SubscriberMonitor monitor;
+    private final Persistor<StoredMessageBatch> persistor;
 
     public AbstractMessageStore(
             @NotNull MessageRouter<T> router,
-            @NotNull CradleManager cradleManager,
-            @NotNull MessageStoreConfiguration configuration
+            @NotNull CradleStorage cradleStorage,
+            @NotNull Persistor<StoredMessageBatch> persistor,
+            @NotNull Configuration configuration
     ) {
         this.router = requireNonNull(router, "Message router can't be null");
-        this.cradleStorage = requireNonNull(cradleManager.getStorage(), "Cradle storage can't be null");
+        this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
+        this.persistor = requireNonNull(persistor, "Persistor can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
-        this.futures = new FutureTracker<>();
     }
 
     public void start() {
@@ -135,8 +132,6 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                 Thread.currentThread().interrupt();
             }
         }
-
-        futures.awaitRemaining();
     }
 
 
@@ -188,7 +183,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         }
     }
 
-    protected void storeMessages(List<M> messagesList, SessionBatchHolder holder) throws CradleStorageException {
+    protected void storeMessages(List<M> messagesList, SessionBatchHolder holder) throws Exception {
         logger.debug("Process {} messages started", messagesList.size());
 
         StoredMessageBatch storedMessageBatch = cradleStorage.getObjectsFactory().createMessageBatch();
@@ -211,22 +206,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing",
                     storedMessageBatch.getStreamName(), storedMessageBatch.getDirection());
         } else {
-            storeBatchAsync(holtBatch);
+            persistor.persist(holtBatch);
         }
-    }
-
-    private void storeBatchAsync(StoredMessageBatch holtBatch) {
-        CompletableFuture<Void> future = store(holtBatch);
-        futures.track(future);
-        future.whenCompleteAsync((value, exception) -> {
-            if (exception == null) {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("{} - batch stored: {}", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true));
-                }
-            } else {
-                logger.error("{} - batch storing is failure: {}", getClass().getSimpleName(), formatStoredMessageBatch(holtBatch, true), exception);
-            }
-        });
     }
 
     public static String formatStoredMessageBatch(StoredMessageBatch storedMessageBatch, boolean full) {
@@ -363,7 +344,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             return;
         }
         try {
-            storeBatchAsync(batch);
+            persistor.persist(batch);
         } catch (Exception ex) {
             if (logger.isErrorEnabled()) {
                 logger.error("Cannot store batch for session {}: {}", key, formatStoredMessageBatch(batch, false), ex);
@@ -376,8 +357,6 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     protected abstract List<M> getMessages(T delivery);
 
     protected abstract MessageToStore convert(M originalMessage);
-
-    protected abstract CompletableFuture<Void> store(StoredMessageBatch storedMessageBatch);
 
     protected abstract SequenceToTimestamp extractSequenceToTimestamp(M message);
 

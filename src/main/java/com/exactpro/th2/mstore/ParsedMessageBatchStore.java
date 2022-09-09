@@ -32,12 +32,12 @@ import java.util.stream.Stream;
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 
 @Deprecated(since = "5.0.0")
-public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
+public class ParsedMessageBatchStore extends AbstractMessageStore<MessageBatch, Message> {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.PARSED)
             .map(QueueAttribute::toString)
             .toArray(String[]::new);
 
-    public MessageBatchStore(
+    public ParsedMessageBatchStore(
             MessageRouter<MessageBatch> router,
             @NotNull CradleStorage cradleStorage,
             @NotNull Persistor<StoredMessageBatch> persistor,

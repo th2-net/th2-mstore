@@ -35,7 +35,7 @@ public class MessageStore implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(MessageStore.class);
 
     private final MessageBatchPersistors persistor;
-    private final MessageBatchStore parsedStore;
+    private final ParsedMessageBatchStore parsedStore;
     private final RawMessageBatchStore rawStore;
     private final CradleManager cradleManager;
 
@@ -53,7 +53,7 @@ public class MessageStore implements AutoCloseable {
                                             configuration);
         resources.add(rawStore);
 
-        parsedStore = new MessageBatchStore(factory.getMessageRouterParsedBatch(),
+        parsedStore = new ParsedMessageBatchStore(factory.getMessageRouterParsedBatch(),
                                             storage,
                                             persistor.getParsedPersistor(),
                                             configuration);

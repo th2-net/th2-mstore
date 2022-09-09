@@ -33,7 +33,7 @@ public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, M
     @Override
     protected AbstractMessageStore<MessageBatch, Message> createStore(CradleStorage cradleStorage, MessageRouter<MessageBatch> routerMock,
                                                                       Persistor<StoredMessageBatch> persistor, Configuration configuration) {
-        return new MessageBatchStore(routerMock, cradleStorage, persistor, configuration);
+        return new ParsedMessageBatchStore(routerMock, cradleStorage, persistor, configuration);
     }
 
     @Override

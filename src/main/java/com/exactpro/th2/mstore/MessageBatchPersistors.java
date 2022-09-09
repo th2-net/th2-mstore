@@ -40,7 +40,7 @@ public class MessageBatchPersistors implements Runnable, AutoCloseable {
 
     private final BlockingScheduledRetryableTaskQueue<PersistenceTask> taskQueue;
     private final int maxTaskRetries;
-    private CradleStorage cradleStorage;
+    private final CradleStorage cradleStorage;
     private final FutureTracker<Void> futures;
 
     private volatile boolean stopped;
@@ -99,7 +99,7 @@ public class MessageBatchPersistors implements Runnable, AutoCloseable {
         }
     }
 
-    private void processTask(ScheduledRetryableTask<PersistenceTask> task) {
+    void processTask(ScheduledRetryableTask<PersistenceTask> task) {
 
         final PersistenceTask persistenceTask = task.getPayload();
         final StoredMessageBatch batch = persistenceTask.messageBatch;

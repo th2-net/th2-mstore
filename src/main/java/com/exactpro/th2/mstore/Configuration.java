@@ -32,14 +32,16 @@ public class Configuration {
     private Configuration() {
     }
 
-    public Configuration createDefault() {
+    public static Configuration createDefault() {
         return builder().build();
     }
 
+    @JsonProperty("drain-interval")
     public long getDrainInterval() {
         return drainInterval;
     }
 
+    @JsonProperty("termination-timeout")
     public long getTerminationTimeout() {
         return terminationTimeout;
     }
@@ -80,9 +82,16 @@ public class Configuration {
         @JsonPropertyDescription("The timeout in milliseconds to await for the inner drain scheduler to finish all the tasks")
         private long terminationTimeout;
 
+        @JsonProperty("maxTaskCount")
         private Integer maxTaskCount;
+
+        @JsonProperty("maxTaskDataSize")
         private Long maxTaskDataSize;
+
+        @JsonProperty("maxRetryCount")
         private Integer maxRetryCount;
+
+        @JsonProperty("retryDelayBase")
         private Long retryDelayBase;
 
         private Builder() {

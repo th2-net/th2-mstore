@@ -19,6 +19,7 @@ import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,24 +40,30 @@ public class MessageStore implements AutoCloseable {
     private final RawMessageBatchStore rawStore;
     private final CradleManager cradleManager;
 
-    public MessageStore(AbstractCommonFactory factory, Deque<AutoCloseable> resources) {
+    public MessageStore(AbstractCommonFactory factory, Deque<AutoCloseable> resources) throws Exception {
+        Configuration config = factory.getCustomConfiguration(Configuration.class);
+        if (config == null)
+            config = Configuration.createDefault();
+
+        ObjectMapper mapper = new ObjectMapper();
+        LOGGER.info("Effective configuration:\n{}", mapper.writerWithDefaultPrettyPrinter().writeValueAsString(config));
+
         cradleManager = factory.getCradleManager();
-        Configuration configuration = factory.getCustomConfiguration(Configuration.class);
         CradleStorage storage = cradleManager.getStorage();
 
-        persistor = new MessageBatchPersistors(configuration, storage);
+        persistor = new MessageBatchPersistors(config, storage);
         resources.add(persistor);
 
         rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(),
                                             storage,
                                             persistor.getRawPersistor(),
-                                            configuration);
+                                            config);
         resources.add(rawStore);
 
         parsedStore = new ParsedMessageBatchStore(factory.getMessageRouterParsedBatch(),
                                             storage,
                                             persistor.getParsedPersistor(),
-                                            configuration);
+                                            config);
         resources.add(parsedStore);
     }
 

@@ -40,10 +40,10 @@ public class MessagePersistorMetrics {
             .build("th2_mstore_persistor_queue_free_data_size", "Available data size").register();
 
     private static final Counter COUNTER_MESSAGES_PERSISTED = Counter
-            .build("th2_mstore_persistor_events_persisted", "Number of messages persisted").register();
+            .build("th2_mstore_persistor_messages_persisted", "Number of messages persisted").register();
 
     private static final Counter COUNTER_MESSAGES_SIZE_PERSISTED = Counter
-            .build("th2_mstore_persistor_events_sizes_persisted", "Content size of messages that persisted").register();
+            .build("th2_mstore_persistor_messages_sizes_persisted", "Content size of messages that persisted").register();
 
     private static final Counter COUNTER_PERSISTENCE_FAILURES = Counter
             .build("th2_mstore_persistor_persistence_failures", "Number of messages persistence failures").register();

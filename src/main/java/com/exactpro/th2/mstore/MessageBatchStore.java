@@ -22,7 +22,6 @@ import com.exactpro.th2.common.grpc.MessageBatch;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.TextFormat;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -44,7 +43,7 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     public MessageBatchStore(
             MessageRouter<MessageBatch> router,
             @NotNull CradleManager cradleManager,
-            @NotNull MessageStoreConfiguration configuration
+            @NotNull Configuration configuration
     ) {
         super(router, cradleManager, configuration);
     }
@@ -84,8 +83,8 @@ public class MessageBatchStore extends AbstractMessageStore<MessageBatch, Messag
     }
 
     @Override
-    protected SequenceToTimestamp extractSequenceToTimestamp(Message message) {
-        return new SequenceToTimestamp(
+    protected MessageOrderingProperties extractSequenceToTimestamp(Message message) {
+        return new MessageOrderingProperties(
                 message.getMetadata().getId().getSequence(),
                 message.getMetadata().getTimestamp()
         );

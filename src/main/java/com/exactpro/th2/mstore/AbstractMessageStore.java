@@ -23,7 +23,6 @@ import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.GeneratedMessageV3;
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
@@ -41,7 +40,6 @@ import java.util.stream.Collectors;
 
 import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
-import static com.exactpro.th2.mstore.SequenceToTimestamp.SEQUENCE_TO_TIMESTAMP_COMPARATOR;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.BinaryOperator.maxBy;
@@ -54,7 +52,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessionData = new ConcurrentHashMap<>();
     private final Map<String, SessionBatchHolder> sessionHolder = new ConcurrentHashMap<>();
-    private final MessageStoreConfiguration configuration;
+    private final Configuration configuration;
     private final Map<CompletableFuture<Void>, StoredGroupMessageBatch> asyncStoreFutures = new ConcurrentHashMap<>();
     private volatile ScheduledFuture<?> future;
     private final MessageRouter<T> router;
@@ -63,7 +61,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     public AbstractMessageStore(
             @NotNull MessageRouter<T> router,
             @NotNull CradleManager cradleManager,
-            @NotNull MessageStoreConfiguration configuration
+            @NotNull Configuration configuration
     ) {
         this.router = requireNonNull(router, "Message router can't be null");
         cradleStorage = requireNonNull(cradleManager.getStorage(), "Cradle storage can't be null");
@@ -179,7 +177,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
             String sessionGroup = null;
             for (M message : messages) {
-                SequenceToTimestamp sequenceToTimestamp = extractSequenceToTimestamp(message);
+                MessageOrderingProperties sequenceToTimestamp = extractSequenceToTimestamp(message);
                 SessionKey sessionKey = createSessionKey(message);
 
                 sessionGroup = sessionKey.getSessionGroup();
@@ -290,8 +288,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                         sessionKey
                 ));
             }
-            SequenceToTimestamp currentSequenceToTimestamp = extractSequenceToTimestamp(message);
-            SequenceToTimestamp previousSequenceToTimestamp;
+            MessageOrderingProperties currentSequenceToTimestamp = extractSequenceToTimestamp(message);
+            MessageOrderingProperties previousSequenceToTimestamp;
             if (sessions.containsKey(sessionKey)) {
                 previousSequenceToTimestamp = extractSequenceToTimestamp(sessions.get(sessionKey));
             } else if(sessionData.containsKey(sessionKey)){
@@ -304,7 +302,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             sessions.put(sessionKey, message);
         }
     }
-    private SequenceToTimestamp getLastSequenceToTimeStamp(SessionKey sessionKey){
+    private MessageOrderingProperties getLastSequenceToTimeStamp(SessionKey sessionKey){
         long lastSequence = -1L;
         try {
             lastSequence = cradleStorage.getLastMessageIndex(sessionKey.session, sessionKey.direction);
@@ -321,13 +319,13 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         } catch (IOException e) {
             logger.info("Couldn't get timestamp of last message from cradle: {}", e.getMessage());
         }
-        return new SequenceToTimestamp(lastSequence, toTimestamp(lastTimeInstant));
+        return new MessageOrderingProperties(lastSequence, toTimestamp(lastTimeInstant));
     }
 
     private static void verifySequenceToTimestamp(
             int messageIndex,
-            SequenceToTimestamp previous,
-            SequenceToTimestamp current
+            MessageOrderingProperties previous,
+            MessageOrderingProperties current
     ) {
         if (current.sequenceIsLessOrEquals(previous)) {
             throw new IllegalArgumentException(format(
@@ -390,7 +388,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     protected abstract CompletableFuture<Void> store(StoredGroupMessageBatch messageBatch, String sessionGroup);
 
-    protected abstract SequenceToTimestamp extractSequenceToTimestamp(M message);
+    protected abstract MessageOrderingProperties extractSequenceToTimestamp(M message);
 
     protected abstract SessionKey createSessionKey(M message);
 
@@ -455,13 +453,13 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
     static class SessionData {
-        private final AtomicReference<SequenceToTimestamp> lastSequenceToTimestamp = new AtomicReference<>(SequenceToTimestamp.MIN);
+        private final AtomicReference<MessageOrderingProperties> lastSequenceToTimestamp = new AtomicReference<>(MessageOrderingProperties.MIN_VALUE);
 
         SessionData() {
         }
 
-        public SequenceToTimestamp getAndUpdateLastSequenceToTimestamp(SequenceToTimestamp newLastSequenceToTimestamp) {
-            return lastSequenceToTimestamp.getAndAccumulate(newLastSequenceToTimestamp, maxBy(SEQUENCE_TO_TIMESTAMP_COMPARATOR));
+        public MessageOrderingProperties getAndUpdateLastSequenceToTimestamp(MessageOrderingProperties newLastSequenceToTimestamp) {
+            return lastSequenceToTimestamp.getAndAccumulate(newLastSequenceToTimestamp, maxBy(MessageOrderingProperties.COMPARATOR));
         }
     }
 }

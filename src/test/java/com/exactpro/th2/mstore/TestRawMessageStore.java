@@ -21,7 +21,6 @@ import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.common.schema.message.MessageRouter;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 
@@ -38,7 +37,7 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
 
     @Override
     protected AbstractMessageStore<RawMessageBatch, RawMessage> createStore(CradleManager cradleManagerMock, MessageRouter<RawMessageBatch> routerMock,
-                                                                            MessageStoreConfiguration configuration) {
+                                                                            Configuration configuration) {
         return new RawMessageBatchStore(routerMock, cradleManagerMock, configuration);
     }
 

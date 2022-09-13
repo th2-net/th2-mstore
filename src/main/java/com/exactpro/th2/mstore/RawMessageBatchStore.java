@@ -24,7 +24,6 @@ import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.common.message.MessageUtils;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.util.Timestamps;
 import org.apache.commons.lang3.builder.ToStringBuilder;
@@ -47,7 +46,7 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
     public RawMessageBatchStore(
             MessageRouter<RawMessageBatch> router,
             @NotNull CradleManager cradleManager,
-            @NotNull MessageStoreConfiguration configuration
+            @NotNull Configuration configuration
     ) {
         super(router, cradleManager, configuration);
     }
@@ -63,8 +62,8 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
     }
 
     @Override
-    protected SequenceToTimestamp extractSequenceToTimestamp(RawMessage message) {
-        return new SequenceToTimestamp(
+    protected MessageOrderingProperties extractSequenceToTimestamp(RawMessage message) {
+        return new MessageOrderingProperties(
                 message.getMetadata().getId().getSequence(),
                 message.getMetadata().getTimestamp()
         );

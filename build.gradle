@@ -62,6 +62,7 @@ dependencies {
     implementation 'com.exactpro.th2:common:3.39.2'
     implementation 'com.google.protobuf:protobuf-java-util'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.4'
+    implementation 'io.prometheus:simpleclient:0.9.0'
     implementation "org.jetbrains:annotations"
 
     implementation "com.exactpro.th2:cradle-core:$cradleVersion"

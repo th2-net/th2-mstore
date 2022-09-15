@@ -27,7 +27,6 @@ import org.slf4j.LoggerFactory;
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 
 public class MessageStore {
 
@@ -38,7 +37,7 @@ public class MessageStore {
 
     public MessageStore(AbstractCommonFactory factory) {
         cradleManager = factory.getCradleManager();
-        MessageStoreConfiguration configuration = factory.getCustomConfiguration(MessageStoreConfiguration.class);
+        Configuration configuration = factory.getCustomConfiguration(Configuration.class);
         rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(), cradleManager, configuration);
     }
 

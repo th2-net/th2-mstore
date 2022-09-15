@@ -21,7 +21,6 @@ import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
@@ -37,7 +36,7 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
     public RawMessageBatchStore(
             MessageRouter<RawMessageBatch> router,
             @NotNull CradleManager cradleManager,
-            @NotNull MessageStoreConfiguration configuration
+            @NotNull Configuration configuration
     ) {
         super(router, cradleManager, configuration);
     }

@@ -24,7 +24,6 @@ import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.GeneratedMessageV3;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.TimestampOrBuilder;
@@ -79,8 +78,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         when(storageMock.getLastSequence(any(), any(), any())).thenReturn(-1L);
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         when(routerMock.subscribeAll(any(), any())).thenReturn(mock(SubscriberMonitor.class));
-        MessageStoreConfiguration configuration = new MessageStoreConfiguration();
-        configuration.setDrainInterval(DRAIN_TIMEOUT / 10);
+        Configuration configuration = Configuration.builder().withDrainInterval(DRAIN_TIMEOUT / 10).build();
         messageStore = spy(createStore(cradleManagerMock, routerMock, configuration));
         messageStore.start();
     }
@@ -90,7 +88,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         messageStore.dispose();
     }
 
-    protected abstract AbstractMessageStore<T, M> createStore(CradleManager cradleManagerMock, MessageRouter<T> routerMock, MessageStoreConfiguration configuration);
+    protected abstract AbstractMessageStore<T, M> createStore(CradleManager cradleManagerMock, MessageRouter<T> routerMock, Configuration configuration);
 
     protected abstract M createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, String bookName);
 

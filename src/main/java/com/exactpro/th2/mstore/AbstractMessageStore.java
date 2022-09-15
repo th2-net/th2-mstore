@@ -25,7 +25,6 @@ import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.GeneratedMessageV3;
 import org.apache.commons.lang3.builder.EqualsBuilder;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
@@ -52,7 +51,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessionData = new ConcurrentHashMap<>();
     private final Map<String, BatchHolder> batchHolder = new ConcurrentHashMap<>();
-    private final MessageStoreConfiguration configuration;
+    private final Configuration configuration;
     private final Map<CompletableFuture<Void>, GroupedMessageBatchToStore> asyncStoreFutures = new ConcurrentHashMap<>();
     private volatile ScheduledFuture<?> future;
     private final MessageRouter<T> router;
@@ -61,7 +60,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     public AbstractMessageStore(
             @NotNull MessageRouter<T> router,
             @NotNull CradleManager cradleManager,
-            @NotNull MessageStoreConfiguration configuration
+            @NotNull Configuration configuration
     ) {
         this.router = requireNonNull(router, "Message router can't be null");
         this.cradleStorage = requireNonNull(cradleManager.getStorage(), "Cradle storage can't be null");

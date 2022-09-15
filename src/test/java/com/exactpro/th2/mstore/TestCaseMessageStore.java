@@ -55,6 +55,8 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
     private final CradleStorage storageMock = mock(CradleStorage.class);
     @SuppressWarnings("unchecked")
     private final MessageRouter<T> routerMock = (MessageRouter<T>) mock(MessageRouter.class);
+    @SuppressWarnings("unchecked")
+    private final Persistor persistor = mock(Persistor.class);
     private final CradleStoreFunction storeFunction;
     private final Random random = new Random();
 
@@ -79,16 +81,20 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         when(routerMock.subscribeAll(any(), any())).thenReturn(mock(SubscriberMonitor.class));
         Configuration configuration = Configuration.builder().withDrainInterval(DRAIN_TIMEOUT / 10).build();
-        messageStore = spy(createStore(cradleManagerMock, routerMock, configuration));
+        messageStore = spy(createStore(storageMock, routerMock, persistor, configuration));
         messageStore.start();
     }
 
     @AfterEach
     void tearDown() {
-        messageStore.dispose();
+        messageStore.close();
     }
 
-    protected abstract AbstractMessageStore<T, M> createStore(CradleManager cradleManagerMock, MessageRouter<T> routerMock, Configuration configuration);
+    protected abstract AbstractMessageStore<T, M> createStore(
+            CradleStorage cradleStorageMock,
+            MessageRouter<T> routerMock,
+            Persistor<GroupedMessageBatchToStore> persistor,
+            Configuration configuration);
 
     protected abstract M createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, String bookName);
 
@@ -398,7 +404,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         M first = createMessage("test", "group", Direction.FIRST, 1, bookName(random.nextInt()));
 
         messageStore.handle(deliveryOf(first));
-        messageStore.dispose();
+        messageStore.close();
 
         verify(completableFuture).get(any(long.class), any(TimeUnit.class));
     }
@@ -413,7 +419,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         M first = createMessage("test", "group", Direction.FIRST, 1, bookName(random.nextInt()));
 
         messageStore.handle(deliveryOf(first));
-        messageStore.dispose();
+        messageStore.close();
 
         verify(completableFuture).get(any(long.class), any(TimeUnit.class));
         verify(completableFuture, times(2)).isDone();
@@ -430,7 +436,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         M first = createMessage("test", "group", Direction.FIRST, 1, bookName(random.nextInt()));
 
         messageStore.handle(deliveryOf(first));
-        messageStore.dispose();
+        messageStore.close();
 
         verify(completableFuture).get(any(long.class), any(TimeUnit.class));
         verify(completableFuture).isDone();
@@ -445,7 +451,7 @@ abstract class TestCaseMessageStore<T extends GeneratedMessageV3, M extends Gene
         M first = createMessage("test", "group", Direction.FIRST, 1, bookName(random.nextInt()));
 
         messageStore.handle(deliveryOf(first));
-        messageStore.dispose();
+        messageStore.close();
 
         verify(completableFuture).get(any(long.class), any(TimeUnit.class));
         verify(completableFuture).isDone();

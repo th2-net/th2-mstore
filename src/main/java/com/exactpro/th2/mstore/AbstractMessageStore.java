@@ -44,7 +44,7 @@ import static com.google.protobuf.TextFormat.shortDebugString;
 import static java.util.Objects.requireNonNull;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
-public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> {
+public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> implements AutoCloseable  {
     private static final Logger logger = LoggerFactory.getLogger(AbstractMessageStore.class);
 
     protected final CradleStorage cradleStorage;
@@ -59,11 +59,12 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
 
     public AbstractMessageStore(
             @NotNull MessageRouter<T> router,
-            @NotNull CradleManager cradleManager,
+            @NotNull CradleStorage cradleStorage,
+            @NotNull Persistor<GroupedMessageBatchToStore> persistor,
             @NotNull Configuration configuration
     ) {
         this.router = requireNonNull(router, "Message router can't be null");
-        this.cradleStorage = requireNonNull(cradleManager.getStorage(), "Cradle storage can't be null");
+        this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
     }
 
@@ -88,7 +89,8 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
 
-    public void dispose() {
+    @Override
+    public void close() {
         if (monitor != null) {
             try {
                 monitor.unsubscribe();

@@ -13,7 +13,8 @@
 
 package com.exactpro.th2.mstore;
 
-import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
@@ -33,11 +34,12 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
 
     @Override
     protected AbstractMessageStore<RawMessageBatch, RawMessage> createStore(
-            CradleManager cradleManagerMock,
+            CradleStorage cradleStorageMock,
             MessageRouter<RawMessageBatch> routerMock,
+            Persistor<GroupedMessageBatchToStore> persistor,
             Configuration configuration
     ) {
-        return new RawMessageBatchStore(routerMock, cradleManagerMock, configuration);
+        return new RawMessageBatchStore(routerMock, cradleStorageMock, persistor, configuration);
     }
 
     @Override

@@ -13,7 +13,7 @@
 
 package com.exactpro.th2.mstore;
 
-import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.utils.CradleStorageException;
@@ -28,17 +28,18 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
-public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, RawMessage> {
+public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, RawMessage>{
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.RAW)
             .map(QueueAttribute::toString)
             .toArray(String[]::new);
 
     public RawMessageBatchStore(
             MessageRouter<RawMessageBatch> router,
-            @NotNull CradleManager cradleManager,
+            @NotNull CradleStorage cradleStorage,
+            @NotNull Persistor<GroupedMessageBatchToStore> persistor,
             @NotNull Configuration configuration
     ) {
-        super(router, cradleManager, configuration);
+        super(router, cradleStorage, persistor, configuration);
     }
 
     @Override

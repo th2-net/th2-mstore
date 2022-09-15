@@ -24,7 +24,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-public class BatchHolder {
+public class SessionBatchHolder {
 
     private final Supplier<GroupedMessageBatchToStore> batchSupplier;
 
@@ -33,7 +33,7 @@ public class BatchHolder {
     private volatile GroupedMessageBatchToStore holtBatch;
     private final String group;
 
-    public BatchHolder(String group, Supplier<GroupedMessageBatchToStore> batchSupplier) {
+    public SessionBatchHolder(String group, Supplier<GroupedMessageBatchToStore> batchSupplier) {
         this.batchSupplier = Objects.requireNonNull(batchSupplier, "'Batch supplier' parameter");
         this.group = group;
         this.holtBatch = batchSupplier.get();

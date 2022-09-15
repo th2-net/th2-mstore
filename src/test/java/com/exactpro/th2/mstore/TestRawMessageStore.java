@@ -28,9 +28,6 @@ import java.time.Instant;
 import java.util.List;
 
 public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, RawMessage> {
-    TestRawMessageStore() {
-        super((storage, batch) -> storage.storeGroupedMessageBatchAsync(batch));
-    }
 
     @Override
     protected AbstractMessageStore<RawMessageBatch, RawMessage> createStore(
@@ -51,11 +48,6 @@ public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, R
                                 .build()
                 ).setBody(ByteString.copyFrom("test".getBytes(StandardCharsets.UTF_8)))
                 .build();
-    }
-
-    @Override
-    protected long extractSize(RawMessage message) {
-        return message.toByteArray().length;
     }
 
     @Override

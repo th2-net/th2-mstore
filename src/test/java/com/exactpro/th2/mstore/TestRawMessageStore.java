@@ -13,15 +13,14 @@
 
 package com.exactpro.th2.mstore;
 
-import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.cradle.serialization.MessagesSizeCalculator;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.common.schema.message.MessageRouter;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.Timestamp;
 
 import java.time.Instant;
@@ -30,14 +29,11 @@ import java.util.List;
 import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 
 public class TestRawMessageStore extends TestCaseMessageStore<RawMessageBatch, RawMessage> {
-    TestRawMessageStore() {
-        super(CradleStorage::storeMessageBatchAsync);
-    }
 
     @Override
-    protected AbstractMessageStore<RawMessageBatch, RawMessage> createStore(CradleManager cradleManagerMock, MessageRouter<RawMessageBatch> routerMock,
-                                                                            MessageStoreConfiguration configuration) {
-        return new RawMessageBatchStore(routerMock, cradleManagerMock, configuration);
+    protected AbstractMessageStore<RawMessageBatch, RawMessage> createStore(CradleStorage cradleStorage, MessageRouter<RawMessageBatch> routerMock,
+                                                                            Persistor<StoredMessageBatch> persistor, Configuration configuration) {
+        return new RawMessageBatchStore(routerMock, cradleStorage, persistor, configuration);
     }
 
     @Override

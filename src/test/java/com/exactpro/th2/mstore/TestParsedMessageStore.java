@@ -16,28 +16,24 @@ package com.exactpro.th2.mstore;
 import java.time.Instant;
 import java.util.List;
 
-import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.messages.StoredMessageBatch;
 import com.exactpro.cradle.serialization.MessagesSizeCalculator;
 import com.exactpro.th2.common.grpc.Direction;
 import com.exactpro.th2.common.grpc.Message;
 import com.exactpro.th2.common.grpc.MessageBatch;
 import com.exactpro.th2.common.grpc.MessageMetadata;
 import com.exactpro.th2.common.schema.message.MessageRouter;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.Timestamp;
 
 import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 
 public class TestParsedMessageStore extends TestCaseMessageStore<MessageBatch, Message> {
-    TestParsedMessageStore() {
-        super(CradleStorage::storeProcessedMessageBatchAsync);
-    }
 
     @Override
-    protected AbstractMessageStore<MessageBatch, Message> createStore(CradleManager cradleManagerMock, MessageRouter<MessageBatch> routerMock,
-                                                                      MessageStoreConfiguration configuration) {
-        return new MessageBatchStore(routerMock, cradleManagerMock, configuration);
+    protected AbstractMessageStore<MessageBatch, Message> createStore(CradleStorage cradleStorage, MessageRouter<MessageBatch> routerMock,
+                                                                      Persistor<StoredMessageBatch> persistor, Configuration configuration) {
+        return new ParsedMessageBatchStore(routerMock, cradleStorage, persistor, configuration);
     }
 
     @Override

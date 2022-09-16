@@ -182,19 +182,22 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             holtBatch = holder.resetAndUpdate(storedGroupMessageBatch);
         }
 
-        if (holtBatch.isEmpty() && logger.isDebugEnabled()) {
+        if (holtBatch.isEmpty() && logger.isDebugEnabled())
             logger.debug("Holder for '{}' has been concurrently reset. Skip storing",
                     storedGroupMessageBatch.getSessionGroup());
-        } else {
-            // submit batch for persistence
-            Histogram.Timer timer = metrics.startMeasuringPersistenceLatency();
-            try {
-                persistor.persist(holtBatch);
-            } catch (Exception e) {
-                logger.error("Persistence exception", e);
-            } finally {
-                timer.observeDuration();
-            }
+        else
+            persist(holtBatch);
+    }
+
+    private void persist(StoredGroupMessageBatch batch) {
+        Histogram.Timer timer = metrics.startMeasuringPersistenceLatency();
+        try {
+            persistor.persist(batch);
+        } catch (Exception e) {
+            logger.error("Exception storing store batch for group {}: {}", batch.getSessionGroup(),
+                                    formatStoredMessageBatch(batch, false), e);
+        } finally {
+            timer.observeDuration();
         }
     }
 
@@ -320,13 +323,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             logger.debug("Holder for group: '{}' has been concurrently reset. Skip storing by scheduler", group);
             return;
         }
-        try {
-            persistor.persist(batch);
-        } catch (Exception ex) {
-            if (logger.isErrorEnabled()) {
-                logger.error("Cannot store batch for group {}: {}", group, formatStoredMessageBatch(batch, false), ex);
-            }
-        }
+        persist(batch);
     }
 
     protected abstract String[] getAttributes();

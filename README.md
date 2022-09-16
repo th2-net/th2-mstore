@@ -79,7 +79,7 @@ Please see more details about this feature via [link](https://github.com/th2-net
 + Limiting simultaneously processed message batches by number and content size
 + Retrying storing message batches in case of failure
 + To check message batch ordering mstore now loads on startup last sequence number and timestamp from cradle
-+ Updated cradle version from `3.1.1` to `3.1.3`
++ Updated cradle version from `3.1.1` to `3.1.3` **data migration is necessary from previous version**
 
 ## 4.0.0
 

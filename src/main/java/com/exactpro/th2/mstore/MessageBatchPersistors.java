@@ -21,11 +21,15 @@ import com.exactpro.th2.taskutils.BlockingScheduledRetryableTaskQueue;
 import com.exactpro.th2.taskutils.FutureTracker;
 import com.exactpro.th2.taskutils.RetryScheduler;
 import com.exactpro.th2.taskutils.ScheduledRetryableTask;
+import io.prometheus.client.Histogram;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 import static java.util.Objects.requireNonNull;
@@ -43,6 +47,9 @@ public class MessageBatchPersistors implements Runnable, AutoCloseable {
     private final CradleStorage cradleStorage;
     private final FutureTracker<Void> futures;
 
+    private final MessagePersistorMetrics metrics;
+    private final ScheduledExecutorService samplerService;
+
     private volatile boolean stopped;
     private final Object signal = new Object();
 
@@ -58,6 +65,10 @@ public class MessageBatchPersistors implements Runnable, AutoCloseable {
 
         this.rawPersistor = new RawPersistor();
         this.parsedPersistor = new ParsedPersistor();
+
+        this.metrics = new MessagePersistorMetrics(taskQueue);
+        this.samplerService = Executors.newSingleThreadScheduledExecutor();
+
     }
 
     public Persistor<StoredMessageBatch> getRawPersistor() {
@@ -84,6 +95,12 @@ public class MessageBatchPersistors implements Runnable, AutoCloseable {
 
         LOGGER.info("Message batch persistor started. Maximum data size for tasks = {}, maximum number of tasks = {}",
                 taskQueue.getMaxDataSize(), taskQueue.getMaxTaskCount());
+        samplerService.scheduleWithFixedDelay(
+                metrics::takeQueueMeasurements,
+                0,
+                1,
+                TimeUnit.SECONDS
+        );
         while (!stopped) {
             try {
                 ScheduledRetryableTask<PersistenceTask> task = taskQueue.awaitScheduled();
@@ -103,15 +120,18 @@ public class MessageBatchPersistors implements Runnable, AutoCloseable {
 
         final PersistenceTask persistenceTask = task.getPayload();
         final StoredMessageBatch batch = persistenceTask.messageBatch;
+        final Histogram.Timer timer = metrics.startMeasuringPersistenceLatency();
 
         CompletableFuture<Void> result = persistenceTask.storeFunction.apply(batch)
                 .thenRun(() -> LOGGER.debug("Stored batch id '{}'", batch.getId()))
                 .whenCompleteAsync((unused, ex) ->
                         {
+                            timer.observeDuration();
                             if (ex != null)
                                 logAndRetry(task, ex);
                             else {
                                 taskQueue.complete(task);
+                                metrics.updateMessageMeasurements(batch.getMessageCount(), task.getPayloadSize());
                             }
                         }
                 );
@@ -130,10 +150,16 @@ public class MessageBatchPersistors implements Runnable, AutoCloseable {
         } catch (Exception ex) {
             LOGGER.error("Cannot await all futures to be finished", ex);
         }
+        try {
+            samplerService.shutdown();
+            samplerService.awaitTermination(1, TimeUnit.MINUTES);
+        } catch (InterruptedException e) {
+        }
     }
 
     private void logAndRetry(ScheduledRetryableTask<PersistenceTask> task, Throwable e) {
 
+        metrics.registerPersistenceFailure();
         int retriesDone = task.getRetriesDone() + 1;
         final StoredMessageBatch messageBatch =task.getPayload().messageBatch;
 
@@ -144,10 +170,12 @@ public class MessageBatchPersistors implements Runnable, AutoCloseable {
                     task.getRetriesLeft(),
                     e);
             taskQueue.retry(task);
+            metrics.registerPersistenceRetry(retriesDone);
 
         } else {
 
             taskQueue.complete(task);
+            metrics.registerAbortedPersistence();
             LOGGER.error("Failed to store the message batch id '{}', aborting after {} executions",
                     messageBatch.getId(),
                     retriesDone,
@@ -178,6 +206,7 @@ public class MessageBatchPersistors implements Runnable, AutoCloseable {
     class RawPersistor implements Persistor<StoredMessageBatch> {
         @Override
         public void persist(StoredMessageBatch data) {
+            metrics.takeQueueMeasurements();
             taskQueue.submit(
                     new ScheduledRetryableTask<>(
                             System.nanoTime(),
@@ -191,6 +220,7 @@ public class MessageBatchPersistors implements Runnable, AutoCloseable {
     class ParsedPersistor implements Persistor<StoredMessageBatch> {
         @Override
         public void persist(StoredMessageBatch data) {
+            metrics.takeQueueMeasurements();
             taskQueue.submit(
                     new ScheduledRetryableTask<>(
                             System.nanoTime(),

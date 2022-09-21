@@ -24,6 +24,7 @@ import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.google.protobuf.GeneratedMessageV3;
+import io.prometheus.client.Histogram;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -56,6 +57,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     private final MessageRouter<T> router;
     private SubscriberMonitor monitor;
     private final Persistor<StoredMessageBatch> persistor;
+    private final MessageProcessorMetrics metrics;
 
     public AbstractMessageStore(@NotNull MessageRouter<T> router,
                                 @NotNull CradleStorage cradleStorage,
@@ -66,6 +68,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         this.cradleStorage = Objects.requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.persistor = Objects.requireNonNull(persistor, "Persistor can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
+        this.metrics = new MessageProcessorMetrics();
     }
 
     public void start() {
@@ -193,8 +196,20 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         if (holtBatch.isEmpty() && logger.isDebugEnabled()) {
             logger.debug("Holder for stream: '{}', direction: '{}' has been concurrently reset. Skip storing",
                     storedMessageBatch.getStreamName(), storedMessageBatch.getDirection());
-        } else
-            persistor.persist(holtBatch);
+        } else {
+            persist(holtBatch);
+        }
+    }
+
+    private void persist(StoredMessageBatch batch) {
+        Histogram.Timer timer = metrics.startMeasuringPersistenceLatency();
+        try {
+            persistor.persist(batch);
+        } catch (Exception e) {
+            logger.error("Exception persisting batch {}", formatStoredMessageBatch(batch, false), e);
+        } finally {
+            timer.observeDuration();
+        }
     }
 
     public static String formatStoredMessageBatch(StoredMessageBatch storedMessageBatch, boolean full) {
@@ -329,13 +344,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
                     key.streamName, key.direction);
             return;
         }
-        try {
-            persistor.persist(batch);
-        } catch (Exception ex) {
-            if (logger.isErrorEnabled()) {
-                logger.error("Cannot store batch for session {}: {}", key, formatStoredMessageBatch(batch, false), ex);
-            }
-        }
+        persist(batch);
     }
 
     protected abstract String[] getAttributes();

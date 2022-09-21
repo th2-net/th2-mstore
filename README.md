@@ -18,15 +18,25 @@ session alias, direction and sequence number are a **compound unique identifier*
 ```json
 {
   "drain-interval": 1000,
-  "termination-timeout": 5000
+  "termination-timeout": 5000,
+  "maxTaskCount" : 1024,
+  "maxTaskDataSize" : 133169152,
+  "maxRetryCount" : 3,
+  "retryDelayBase" : 5000
 }
 ```
 
-#### drain-interval
-Interval in milliseconds to drain all aggregated batches that are not stored yet. The default value is 1000.
++ _drain-interval_ - Interval in milliseconds to drain all aggregated batches that are not stored yet. The default value is 1000.
++ _termination-timeout_ - Timeout in milliseconds to await for the inner drain scheduler to finish all the tasks. The default value is 5000.
++ _maxTaskCount_ - Maximum number of message batches that will be processed simultaneously
++ _maxTaskDataSize_ - Maximum total data size of messages during parallel processing
++ _maxRetryCount_ - Maximum number of retries that will be done in case of message batch persistence failure
++ _retryDelayBase_ - Constant that will be used to calculate next retry time(ms):
+  retryDelayBase * retryNumber
 
-#### termination-timeout
-The timeout in milliseconds to await for the inner drain scheduler to finish all the tasks. The default value is 5000.
+If some of these parameters are not provided, mstore will use default(undocumented) value.
+If _maxTaskCount_ or _maxTaskDataSize_ limits are reached during processing, mstore will pause processing new messages
+until some events are processed
 
 # Custom resources for infra-mgr
 
@@ -63,6 +73,13 @@ spec:
 
 This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
+
+## 4.0.x
++ Added metrics collection for Prometheus
++ Limiting simultaneously processed message batches by number and content size
++ Retrying storing message batches in case of failure
++ To check message batch ordering mstore now loads on startup last sequence number and timestamp from cradle
++ Updated cradle version from `3.1.1` to `3.1.3` **data migration is necessary from previous version**
 
 ## 4.0.0
 

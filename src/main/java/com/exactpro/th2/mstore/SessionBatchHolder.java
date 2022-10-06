@@ -1,9 +1,11 @@
 /*
- * Copyright 2020-2021 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -22,7 +24,7 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-public class BatchHolder {
+public class SessionBatchHolder {
 
     private final Supplier<GroupedMessageBatchToStore> batchSupplier;
 
@@ -31,15 +33,12 @@ public class BatchHolder {
     private volatile GroupedMessageBatchToStore holtBatch;
     private final String group;
 
-    public BatchHolder(String group, Supplier<GroupedMessageBatchToStore> batchSupplier) {
+    public SessionBatchHolder(String group, Supplier<GroupedMessageBatchToStore> batchSupplier) {
         this.batchSupplier = Objects.requireNonNull(batchSupplier, "'Batch supplier' parameter");
         this.group = group;
-        holtBatch = batchSupplier.get();
+        this.holtBatch = batchSupplier.get();
     }
 
-    public String getGroup() {
-        return this.group;
-    }
     /**
      * Tries to add the batch with messages to the currently holt batch.
      * If the batch can be added because of its size or quantity limitations,
@@ -78,5 +77,9 @@ public class BatchHolder {
         holtBatch = newValue;
         lastReset = Instant.now();
         return currentBatch;
+    }
+
+    public String getGroup() {
+        return group;
     }
 }

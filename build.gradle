@@ -59,15 +59,15 @@ dependencies {
     api platform('com.exactpro.th2:bom:3.0.0')
 
     implementation 'com.exactpro.th2:common:5.0.0-dev-version-5-2910641800-SNAPSHOT'
-
+    implementation 'com.exactpro.th2:task-utils:0.1.1'
     implementation 'com.google.protobuf:protobuf-java-util'
-
-    implementation "org.slf4j:slf4j-api:1.7.36"
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.4'
     implementation "org.jetbrains:annotations"
 
     implementation "com.exactpro.th2:cradle-core:$cradleVersion"
     implementation "com.exactpro.th2:cradle-cassandra:$cradleVersion"
 
+    implementation "org.slf4j:slf4j-api:1.7.36"
     testImplementation 'org.junit.jupiter:junit-jupiter:5.4.2'
     testImplementation 'org.mockito:mockito-junit-jupiter:3.6.0'
 }

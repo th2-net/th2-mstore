@@ -3,7 +3,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,7 +15,7 @@
 
 package com.exactpro.th2.mstore;
 
-import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.Direction;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.StoredGroupMessageBatch;
@@ -24,7 +26,6 @@ import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.common.message.MessageUtils;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.util.Timestamps;
 import org.apache.commons.lang3.builder.ToStringBuilder;
@@ -32,24 +33,24 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
-public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, RawMessage> {
+public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, RawMessage>  {
     private static final String[] ATTRIBUTES = Stream.of(QueueAttribute.SUBSCRIBE, QueueAttribute.RAW)
             .map(QueueAttribute::toString)
             .toArray(String[]::new);
 
     public RawMessageBatchStore(
             MessageRouter<RawMessageBatch> router,
-            @NotNull CradleManager cradleManager,
-            @NotNull MessageStoreConfiguration configuration
+            @NotNull CradleStorage cradleStorage,
+            @NotNull Persistor<StoredGroupMessageBatch> persistor,
+            @NotNull Configuration configuration
     ) {
-        super(router, cradleManager, configuration);
+        super(router, cradleStorage, persistor, configuration);
     }
 
     @Override
@@ -58,13 +59,8 @@ public class RawMessageBatchStore extends AbstractMessageStore<RawMessageBatch, 
     }
 
     @Override
-    protected CompletableFuture<Void> store(StoredGroupMessageBatch messageBatch, String sessionGroup) {
-        return cradleStorage.storeGroupedMessageBatchAsync(messageBatch, sessionGroup);
-    }
-
-    @Override
-    protected SequenceToTimestamp extractSequenceToTimestamp(RawMessage message) {
-        return new SequenceToTimestamp(
+    protected MessageOrderingProperties extractOrderingProperties(RawMessage message) {
+        return new MessageOrderingProperties(
                 message.getMetadata().getId().getSequence(),
                 message.getMetadata().getTimestamp()
         );

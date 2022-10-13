@@ -3,7 +3,9 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -13,64 +15,67 @@
 
 package com.exactpro.th2.mstore;
 
-import static com.exactpro.th2.common.metrics.CommonMetrics.LIVENESS_MONITOR;
-import static com.exactpro.th2.common.metrics.CommonMetrics.READINESS_MONITOR;
+import com.exactpro.cradle.CradleManager;
+import com.exactpro.cradle.CradleStorage;
+import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
+import com.exactpro.th2.common.schema.factory.CommonFactory;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Deque;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static com.exactpro.th2.common.metrics.CommonMetrics.LIVENESS_MONITOR;
+import static com.exactpro.th2.common.metrics.CommonMetrics.READINESS_MONITOR;
 
-import com.exactpro.cradle.CradleManager;
-import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
-import com.exactpro.th2.common.schema.factory.CommonFactory;
-import com.exactpro.th2.mstore.cfg.MessageStoreConfiguration;
-
-public class MessageStore {
+public class MessageStore implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MessageStore.class);
 
-    private final MessageBatchStore parsedStore;
+    private final RawMessageBatchPersistor persistor;
     private final RawMessageBatchStore rawStore;
+    private final ParsedMessageBatchStore parsedStore;
     private final CradleManager cradleManager;
 
-    public MessageStore(AbstractCommonFactory factory) {
+    public MessageStore(AbstractCommonFactory factory, Deque<AutoCloseable> resources) throws Exception {
+        Configuration config = factory.getCustomConfiguration(Configuration.class);
+        if (config == null)
+            config = Configuration.createDefault();
+
+        ObjectMapper mapper = new ObjectMapper();
+        LOGGER.info("Effective configuration:\n{}", mapper.writerWithDefaultPrettyPrinter().writeValueAsString(config));
+
         cradleManager = factory.getCradleManager();
-        MessageStoreConfiguration configuration = factory.getCustomConfiguration(MessageStoreConfiguration.class);
-        parsedStore = new MessageBatchStore(factory.getMessageRouterParsedBatch(), cradleManager, configuration);
-        rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(), cradleManager, configuration);
+        CradleStorage storage = cradleManager.getStorage();
+
+        persistor = new RawMessageBatchPersistor(config, storage);
+        resources.add(persistor);
+
+        rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(),
+                                            storage,
+                                            persistor,
+                                            config);
+        resources.add(rawStore);
+
+
+        parsedStore = new ParsedMessageBatchStore(factory.getMessageRouterParsedBatch(),
+                storage,
+                data -> {},
+                config);
+        resources.add(parsedStore);
     }
 
-    public void start() {
-        try {
-            parsedStore.start();
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot start storage for parsed messages", e);
-        }
-
-        try {
-            rawStore.start();
-            LOGGER.info("Message store start successfully");
-        } catch (Exception e) {
-            throw new IllegalStateException("Cannot start storage for raw messages", e);
-        }
+    public void start() throws Exception {
+        persistor.start();
+        rawStore.start();
+        parsedStore.start();
     }
 
-    public void dispose() {
-        try {
-            parsedStore.dispose();
-        } catch (Exception e) {
-            LOGGER.error("Cannot dispose storage for parsed messages", e);
-        }
-
-        try {
-            rawStore.dispose();
-        } catch (Exception e) {
-            LOGGER.error("Cannot dispose storage for raw messages", e);
-        }
+    @Override
+    public void close () {
 
         try {
             cradleManager.dispose();
@@ -88,16 +93,20 @@ public class MessageStore {
         configureShutdownHook(resources, lock, condition);
         try {
             LIVENESS_MONITOR.enable();
+
             CommonFactory factory = CommonFactory.createFromArguments(args);
             resources.add(factory);
-            MessageStore store = new MessageStore(factory);
-            resources.add(store::dispose);
+
+            MessageStore store = new MessageStore(factory, resources);
+            resources.add(store);
             store.start();
+
             READINESS_MONITOR.enable();
             LOGGER.info("message store started");
+
             awaitShutdown(lock, condition);
         } catch (InterruptedException e) {
-            LOGGER.info("The main thread interupted", e);
+            LOGGER.info("The main thread interrupted", e);
         } catch (Exception e) {
             LOGGER.error("Fatal error: {}", e.getMessage(), e);
             System.exit(1);
@@ -107,9 +116,9 @@ public class MessageStore {
     private static void awaitShutdown(ReentrantLock lock, Condition condition) throws InterruptedException {
         try {
             lock.lock();
-            LOGGER.info("Wait shutdown");
+            LOGGER.info("Waiting for shutdown");
             condition.await();
-            LOGGER.info("App shutdowned");
+            LOGGER.info("Message Store shutdown");
         } finally {
             lock.unlock();
         }

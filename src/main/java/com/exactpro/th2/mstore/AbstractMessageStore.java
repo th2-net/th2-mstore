@@ -21,6 +21,7 @@ import com.exactpro.cradle.messages.*;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.google.protobuf.GeneratedMessageV3;
+import io.prometheus.client.Histogram;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -52,6 +53,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     private final MessageRouter<T> router;
     private SubscriberMonitor monitor;
     private final Persistor<StoredGroupMessageBatch> persistor;
+    private final MessageProcessorMetrics metrics;
 
     public AbstractMessageStore(
             MessageRouter<T> router,
@@ -63,6 +65,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.persistor = Objects.requireNonNull(persistor, "Persistor can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
+        this.metrics = new MessageProcessorMetrics();
     }
 
     public void start() {
@@ -179,11 +182,23 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             holtBatch = holder.resetAndUpdate(storedGroupMessageBatch);
         }
 
-        if (holtBatch.isEmpty() && logger.isDebugEnabled()) {
+        if (holtBatch.isEmpty() && logger.isDebugEnabled())
             logger.debug("Holder for '{}' has been concurrently reset. Skip storing",
                     storedGroupMessageBatch.getSessionGroup());
-        } else
-            persistor.persist(holtBatch);
+        else
+            persist(holtBatch);
+    }
+
+    private void persist(StoredGroupMessageBatch batch) {
+        Histogram.Timer timer = metrics.startMeasuringPersistenceLatency();
+        try {
+            persistor.persist(batch);
+        } catch (Exception e) {
+            logger.error("Exception storing store batch for group {}: {}", batch.getSessionGroup(),
+                                    formatStoredMessageBatch(batch, false), e);
+        } finally {
+            timer.observeDuration();
+        }
     }
 
     public static String formatStoredMessageBatch(StoredGroupMessageBatch storedMessageBatch, boolean full) {
@@ -308,13 +323,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             logger.debug("Holder for group: '{}' has been concurrently reset. Skip storing by scheduler", group);
             return;
         }
-        try {
-            persistor.persist(batch);
-        } catch (Exception ex) {
-            if (logger.isErrorEnabled()) {
-                logger.error("Cannot store batch for group {}: {}", group, formatStoredMessageBatch(batch, false), ex);
-            }
-        }
+        persist(batch);
     }
 
     protected abstract String[] getAttributes();

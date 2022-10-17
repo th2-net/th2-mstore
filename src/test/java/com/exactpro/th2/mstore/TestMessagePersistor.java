@@ -45,8 +45,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-public class TestRawMessageBatchPersistor {
-    private final Logger logger = LoggerFactory.getLogger(TestRawMessageBatchPersistor.class);
+public class TestMessagePersistor {
+    private final Logger logger = LoggerFactory.getLogger(TestMessagePersistor.class);
 
     private static final int  MAX_MESSAGE_BATCH_SIZE      = 16 * 1024;
     private static final int  MAX_TEST_EVENT_BATCH_SIZE   = 16 * 1024;
@@ -60,7 +60,7 @@ public class TestRawMessageBatchPersistor {
     private static final BookId BOOK_ID = new BookId("test-book");
 
     private final CradleStorage storageMock = mock(CradleStorage.class);
-    private RawMessageBatchPersistor persistor;
+    private MessagePersistor persistor;
 
     private CradleEntitiesFactory cradleObjectsFactory;
 
@@ -75,7 +75,7 @@ public class TestRawMessageBatchPersistor {
                                             .withRetryDelayBase(10L)
                                             .withMaxTaskDataSize(MAX_MESSAGE_QUEUE_DATA_SIZE)
                                             .build();
-        persistor = spy(new RawMessageBatchPersistor(config, storageMock));
+        persistor = spy(new MessagePersistor(config, storageMock));
         persistor.start();
     }
 

@@ -24,9 +24,11 @@ import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
+import com.exactpro.th2.common.grpc.RawMessage;
+import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
-import com.google.protobuf.GeneratedMessageV3;
 import io.prometheus.client.Histogram;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.jetbrains.annotations.NotNull;
@@ -34,7 +36,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -44,23 +49,23 @@ import static com.google.protobuf.TextFormat.shortDebugString;
 import static java.util.Objects.requireNonNull;
 import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
-public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M extends GeneratedMessageV3> implements AutoCloseable  {
-    private static final Logger logger = LoggerFactory.getLogger(AbstractMessageStore.class);
+public class MessageProcessor implements AutoCloseable  {
+    private static final Logger logger = LoggerFactory.getLogger(MessageProcessor.class);
+    private static final String[] ATTRIBUTES = {QueueAttribute.SUBSCRIBE.getValue(), QueueAttribute.RAW.getValue()};
 
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessions = new ConcurrentHashMap<>();
     private final Map<String, SessionBatchHolder> batchHolder = new ConcurrentHashMap<>();
     private final Configuration configuration;
-    private final Map<CompletableFuture<Void>, GroupedMessageBatchToStore> asyncStoreFutures = new ConcurrentHashMap<>();
     private volatile ScheduledFuture<?> drainFuture;
-    private final MessageRouter<T> router;
+    private final MessageRouter<RawMessageBatch> router;
     private SubscriberMonitor monitor;
     private final Persistor<GroupedMessageBatchToStore> persistor;
     private final MessageProcessorMetrics metrics;
 
-    public AbstractMessageStore(
-            @NotNull MessageRouter<T> router,
+    public MessageProcessor(
+            @NotNull MessageRouter<RawMessageBatch> router,
             @NotNull CradleStorage cradleStorage,
             @NotNull Persistor<GroupedMessageBatchToStore> persistor,
             @NotNull Configuration configuration
@@ -138,9 +143,9 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
 
-    public final void handle(T messageBatch) {
+    public final void handle(RawMessageBatch messageBatch) {
         try {
-            List<M> messages = getMessages(messageBatch);
+            List<RawMessage> messages = getMessages(messageBatch);
             if (messages.isEmpty()) {
                 if (logger.isWarnEnabled())
                     logger.warn("Empty batch has been received {}", shortDebugString(messageBatch));
@@ -148,7 +153,7 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
             }
             verifyBatch(messages);
             String sessionGroup = null;
-            for (M message: messages) {
+            for (RawMessage message: messages) {
                 long sequence = extractSequence(message);
                 SessionKey sessionKey = createSessionKey(message);
 
@@ -165,11 +170,11 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
 
-    protected void storeMessages(List<M> messagesList, String sessionGroup) throws Exception {
+    protected void storeMessages(List<RawMessage> messagesList, String sessionGroup) throws Exception {
         logger.debug("Process {} messages started", messagesList.size());
 
         GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(sessionGroup);
-        for (M message : messagesList) {
+        for (RawMessage message : messagesList) {
             MessageToStore messageToStore = convert(message);
             batch.addMessage(messageToStore);
         }
@@ -210,12 +215,12 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
         return builder.toString();
     }
 
-    private void verifyBatch(List<M> messages) {
+    private void verifyBatch(List<RawMessage> messages) {
         HashMap<SessionKey, SessionData> innerCache = new HashMap<>();
         SessionKey lastKey = null;
         long prevSequence = Long.MIN_VALUE;
         for (int i = 0; i < messages.size(); i++) {
-            M message = messages.get(i);
+            RawMessage message = messages.get(i);
             SessionKey sessionKey = createSessionKey(message);
             long currentSeq = extractSequence(message);
 
@@ -313,17 +318,31 @@ public abstract class AbstractMessageStore<T extends GeneratedMessageV3, M exten
     }
 
 
-    protected abstract String[] getAttributes();
+    private SessionKey createSessionKey(RawMessage message) {
+        return new SessionKey(message.getMetadata().getId());
+    }
 
-    protected abstract List<M> getMessages(T delivery);
+    private String[] getAttributes() {
+        return MessageProcessor.ATTRIBUTES;
+    }
 
-    protected abstract MessageToStore convert(M originalMessage) throws CradleStorageException;
 
-    protected abstract CompletableFuture<Void> store(GroupedMessageBatchToStore batch) throws CradleStorageException, IOException;
+    private MessageToStore convert(RawMessage originalMessage) throws CradleStorageException {
+        return ProtoUtil.toCradleMessage(originalMessage);
+    }
 
-    protected abstract long extractSequence(M message);
+    private CompletableFuture<Void> store(GroupedMessageBatchToStore batch) throws CradleStorageException, IOException {
+        return cradleStorage.storeGroupedMessageBatchAsync(batch);
+    }
 
-    protected abstract SessionKey createSessionKey(M message);
+
+    private long extractSequence(RawMessage message) {
+        return message.getMetadata().getId().getSequence();
+    }
+
+    private List<RawMessage> getMessages(RawMessageBatch delivery) {
+        return delivery.getMessagesList();
+    }
 
     protected static class SessionKey {
         public final String sessionAlias;

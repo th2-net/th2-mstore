@@ -35,8 +35,8 @@ public class MessageStore implements AutoCloseable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MessageStore.class);
 
-    private final RawMessageBatchPersistor persistor;
-    private final RawMessageBatchStore rawStore;
+    private final MessagePersistor persistor;
+    private final MessageProcessor processor;
     private final CradleManager cradleManager;
 
     public MessageStore(AbstractCommonFactory factory, Deque<AutoCloseable> resources) throws Exception {
@@ -50,20 +50,20 @@ public class MessageStore implements AutoCloseable {
         cradleManager = factory.getCradleManager();
         CradleStorage storage = cradleManager.getStorage();
 
-        persistor = new RawMessageBatchPersistor(config, storage);
+        persistor = new MessagePersistor(config, storage);
         resources.add(persistor);
 
-        rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(),
+        processor = new MessageProcessor(factory.getMessageRouterRawBatch(),
                                             storage,
                                             persistor,
                                             config);
-        resources.add(rawStore);
+        resources.add(processor);
 
     }
 
     public void start() throws Exception {
         persistor.start();
-        rawStore.start();
+        processor.start();
     }
 
     @Override

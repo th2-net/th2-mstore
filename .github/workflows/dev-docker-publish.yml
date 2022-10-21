@@ -21,13 +21,13 @@ jobs:
       - name: Get SHA of the commit
         id: sha
         run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-      # - name: Get release_version
-      #   id: ver
-      #   uses: christian-draeger/read-properties@1.0.1
-      #   with:
-      #     path: gradle.properties
-      #     property: release_version
-      #${{ steps.ver.outputs.value }}-
+      - name: Get release_version
+        id: ver
+        uses: christian-draeger/read-properties@1.1.1
+        with:
+          path: gradle.properties
+          property: release_version
+      ${{ steps.ver.outputs.value }}-
       - name: Build custom release version
         id: release_ver
         run: echo "value="${{ steps.branch.outputs.branch_name }}-${{ github.run_id }}-${{ steps.sha.outputs.sha_short }}"" >> $GITHUB_OUTPUT

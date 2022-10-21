@@ -15,7 +15,7 @@ jobs:
         with:
           repository: exactpro-th2/ci-github-action
           ref: master
-          token: ${{ secrets.PAT_CI_ACTION }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           path: ci-github-action
       - name: Run CI action
         uses: ./ci-github-action

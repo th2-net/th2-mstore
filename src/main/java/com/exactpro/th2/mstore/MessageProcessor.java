@@ -26,16 +26,15 @@ import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
-import com.exactpro.th2.common.schema.message.MessageRouter;
-import com.exactpro.th2.common.schema.message.QueueAttribute;
-import com.exactpro.th2.common.schema.message.SubscriberMonitor;
+import com.exactpro.th2.common.schema.message.*;
+import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
 import io.prometheus.client.Histogram;
 import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.apache.commons.lang3.builder.ToStringStyle;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,7 +46,6 @@ import java.util.stream.Collectors;
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.google.protobuf.TextFormat.shortDebugString;
 import static java.util.Objects.requireNonNull;
-import static org.apache.commons.lang3.builder.ToStringStyle.NO_CLASS_NAME_STYLE;
 
 public class MessageProcessor implements AutoCloseable  {
     private static final Logger logger = LoggerFactory.getLogger(MessageProcessor.class);
@@ -56,7 +54,7 @@ public class MessageProcessor implements AutoCloseable  {
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessions = new ConcurrentHashMap<>();
-    private final Map<String, SessionBatchHolder> batchHolder = new ConcurrentHashMap<>();
+    private final Map<String, BatchConsolidator> batchCaches = new ConcurrentHashMap<>();
     private final Configuration configuration;
     private volatile ScheduledFuture<?> drainFuture;
     private final MessageRouter<RawMessageBatch> router;
@@ -79,15 +77,26 @@ public class MessageProcessor implements AutoCloseable  {
 
     public void start() {
         if (monitor == null) {
-            monitor = router.subscribeAll((tag, delivery) -> {
-                try {
-                    handle(delivery);
-                } catch (Exception e) {
-                    logger.warn("Can not handle delivery from consumer = {}", tag, e);
+
+            monitor = router.subscribeAllWithManualAck(new ManualConfirmationListener<>() {
+                @Override
+                public void onClose() {
+
                 }
-            }, getAttributes());
+
+                @Override
+                public void handle(@NotNull String s, RawMessageBatch rawMessageBatch, @NotNull ManualAckDeliveryCallback.Confirmation confirmation) {
+
+                }
+
+                @Override
+                public void handle(@NotNull DeliveryMetadata deliveryMetadata, RawMessageBatch rawMessageBatch, @NotNull Confirmation confirmation)  {
+                    process(deliveryMetadata, rawMessageBatch, confirmation);
+                }
+
+            }, MessageProcessor.ATTRIBUTES);
             if (monitor != null) {
-                logger.info("RabbitMQ subscribing was successful");
+                logger.info("RabbitMQ subscription was successful");
             } else {
                 logger.error("Can not find queues for subscribe");
                 throw new RuntimeException("Can not find queues for subscriber");
@@ -99,6 +108,7 @@ public class MessageProcessor implements AutoCloseable  {
                                                         TimeUnit.MILLISECONDS);
         logger.info("Drain scheduler is started");
     }
+
 
     @Override
     public void close() {
@@ -143,64 +153,96 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
 
-    public final void handle(RawMessageBatch messageBatch) {
+    void process(DeliveryMetadata deliveryMetadata, RawMessageBatch messageBatch, Confirmation confirmation) {
         try {
-            List<RawMessage> messages = getMessages(messageBatch);
+            List<RawMessage> messages = messageBatch.getMessagesList();
             if (messages.isEmpty()) {
                 if (logger.isWarnEnabled())
-                    logger.warn("Empty batch has been received {}", shortDebugString(messageBatch));
+                    logger.warn("Received empty batch {}", shortDebugString(messageBatch));
+                confirm(confirmation);
                 return;
             }
-            verifyBatch(messages);
-            String sessionGroup = null;
-            for (RawMessage message: messages) {
-                long sequence = extractSequence(message);
-                SessionKey sessionKey = createSessionKey(message);
 
-                sessionGroup = sessionKey.sessionGroup;
+            if (!deliveryMetadata.isRedelivered())
+                verifyBatch(messages);
+
+            String group = null;
+            for (RawMessage message: messages) {
+                SessionKey sessionKey = createSessionKey(message);
+                group = sessionKey.sessionGroup;
+                long sequence = extractSequence(message);
                 SessionData sessionData = sessions.computeIfAbsent(sessionKey, k -> new SessionData());
 
                 sessionData.getAndUpdateSequence(sequence);
             }
 
-            storeMessages(messages, sessionGroup);
+            if (deliveryMetadata.isRedelivered()) {
+                persist(new ConsolidatedBatch(toCradleBatch(group, messages), confirmation));
+            } else {
+                storeMessages(group, messages, confirmation);
+            }
         } catch (Exception ex) {
-            logger.error("Cannot handle the batch of type {}", messageBatch.getClass(), ex);
+            logger.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
+            reject(confirmation);
         }
     }
 
 
-    protected void storeMessages(List<RawMessage> messagesList, String sessionGroup) throws Exception {
-        logger.debug("Process {} messages started", messagesList.size());
+    private static void confirm(Confirmation confirmation) {
+        try {
+            confirmation.confirm();
+        } catch (Exception e) {
+            logger.error("Exception confirming message", e);
+        }
+    }
 
-        GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(sessionGroup);
+
+    private static void reject(Confirmation confirmation) {
+        try {
+            confirmation.reject();
+        } catch (Exception e) {
+            logger.error("Exception rejecting message", e);
+        }
+    }
+
+
+    private GroupedMessageBatchToStore toCradleBatch(String group, List<RawMessage> messagesList) throws CradleStorageException {
+        GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(group);
         for (RawMessage message : messagesList) {
-            MessageToStore messageToStore = convert(message);
+            MessageToStore messageToStore = ProtoUtil.toCradleMessage(message);
             batch.addMessage(messageToStore);
         }
-        GroupedMessageBatchToStore holtBatch;
-        SessionBatchHolder holder = batchHolder.computeIfAbsent(sessionGroup,
-                k -> new SessionBatchHolder(sessionGroup, () -> cradleStorage.getEntitiesFactory().groupedMessageBatch(sessionGroup)));
+        return batch;
+    }
 
-        synchronized (holder) {
-            if (holder.add(batch)) {
+
+    private void storeMessages(String group, List<RawMessage> messagesList, Confirmation confirmation) throws Exception {
+        logger.debug("Process {} messages started", messagesList.size());
+
+        GroupedMessageBatchToStore batch = toCradleBatch(group, messagesList);
+        BatchConsolidator consolidator = batchCaches.computeIfAbsent(group,
+                k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(group)));
+
+        ConsolidatedBatch consolidatedBatch;
+        synchronized (consolidator) {
+            if (consolidator.add(batch, confirmation)) {
                 if (logger.isDebugEnabled()) {
-                    logger.debug("Message Batch added to the holder: {}", formatMessageBatchToStore(batch, true));
+                    logger.debug("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
                 }
                 return;
             }
-            holtBatch = holder.resetAndUpdate(batch);
+            consolidatedBatch = consolidator.resetAndUpdate(batch, confirmation);
         }
 
-        if (holtBatch.isEmpty())
-            logger.debug("Holder for '{}' has been concurrently reset. Skip storing", sessionGroup);
+        if (consolidatedBatch.batch.isEmpty())
+            logger.debug("Batch cache for group \"{}\" has been concurrently reset. Skip storing", group);
         else
-            persist(holtBatch);
+            persist(consolidatedBatch);
     }
 
 
-    private static String formatMessageBatchToStore(GroupedMessageBatchToStore batch, boolean full) {
-        ToStringBuilder builder = new ToStringBuilder(batch, NO_CLASS_NAME_STYLE)
+    private String formatMessageBatchToStore(GroupedMessageBatchToStore batch, boolean full) {
+        ToStringBuilder builder = new ToStringBuilder(batch, ToStringStyle.NO_CLASS_NAME_STYLE)
                 .append("book name", batch.getBookId().getName())
                 .append("session group", batch.getGroup());
         if (full) {
@@ -215,8 +257,9 @@ public class MessageProcessor implements AutoCloseable  {
         return builder.toString();
     }
 
+
     private void verifyBatch(List<RawMessage> messages) {
-        HashMap<SessionKey, SessionData> innerCache = new HashMap<>();
+        HashMap<SessionKey, SessionData> localCache = new HashMap<>();
         SessionKey lastKey = null;
         long prevSequence = Long.MIN_VALUE;
         for (int i = 0; i < messages.size(); i++) {
@@ -224,8 +267,8 @@ public class MessageProcessor implements AutoCloseable  {
             SessionKey sessionKey = createSessionKey(message);
             long currentSeq = extractSequence(message);
 
-            if (innerCache.containsKey(sessionKey)) {
-                prevSequence = innerCache.get(sessionKey).lastSequence.get();
+            if (localCache.containsKey(sessionKey)) {
+                prevSequence = localCache.get(sessionKey).lastSequence.get();
             } else if(sessions.containsKey(sessionKey)) {
                 prevSequence = sessions.get(sessionKey).lastSequence.get();
             } else {
@@ -234,19 +277,28 @@ public class MessageProcessor implements AutoCloseable  {
 
             if (lastKey == null) {
                 lastKey = sessionKey;
-            } else if(!lastKey.sessionGroup.equals(sessionKey.sessionGroup)) {
+            } else {
+                if (!lastKey.sessionGroup.equals(sessionKey.sessionGroup)) {
+                    throw new IllegalArgumentException(
+                            String.format(
+                                    "Delivery contains different session groups. Message [%d] - session %s; Message [%d] - session %s",
+                                    i - 1, lastKey, i, sessionKey
+                            )
+                    );
+                }
+            }
+
+            if (prevSequence >= currentSeq) {
                 throw new IllegalArgumentException(
                         String.format(
-                                "Delivery contains different session groups. Message [%d] - session %s; Message [%d] - session %s",
-                                i - 1, lastKey, i, sessionKey
+                                "Delivery contains unordered messages. Message [%d] - seqN %d; Message [%d] - seqN %d",
+                                i - 1, prevSequence, i, currentSeq
                         )
                 );
             }
-
-            verifySequence(i, prevSequence, currentSeq);
             SessionData sessionData = new SessionData();
             sessionData.getAndUpdateSequence(currentSeq);
-            innerCache.put(sessionKey, sessionData);
+            localCache.put(sessionKey, sessionData);
         }
     }
 
@@ -261,57 +313,48 @@ public class MessageProcessor implements AutoCloseable  {
         return lastMessageSequence;
     }
 
-    private static void verifySequence(int messageIndex, long lastSeq, long currentSeq) {
-        if (lastSeq >= currentSeq) {
-            throw new IllegalArgumentException(
-                    String.format(
-                            "Delivery contains unordered messages. Message [%d] - seqN %d; Message [%d] - seqN %d",
-                            messageIndex - 1, lastSeq, messageIndex, currentSeq
-                    )
-            );
-        }
-    }
 
     private void drainByScheduler() {
-        try {
-            logger.debug("Start storing batches by scheduler");
-            drain(false);
-            logger.debug("Stop storing batches by scheduler");
-        } catch (Exception e) {
-            logger.error("Exception while draining batches", e);
-        }
+        logger.debug("Starting scheduled cache drain");
+        drain(false);
+        logger.debug("Scheduled cache drain ended");
     }
 
     private void drain(boolean force) {
-        batchHolder.forEach((key, batchHodler) -> drainHolder(batchHodler, force));
-    }
-
-    private void drainHolder(SessionBatchHolder holder, boolean force) {
-
-        logger.trace("Drain holder for session {}; force: {}", holder.getGroup(), force);
-        GroupedMessageBatchToStore batch;
-        synchronized (holder) {
-            if (!force && !holder.isReadyToReset(configuration.getDrainInterval())) {
-                return;
+        batchCaches.forEach((group, consolidator) -> {
+            logger.trace("Draining cache for group \"{}\" (forced={})", group, force);
+            ConsolidatedBatch data;
+            synchronized (consolidator) {
+                if (!force && ((consolidator.ageInMillis() < configuration.getDrainInterval()) || consolidator.isEmpty()))
+                    return;
+                data = consolidator.reset();
             }
-            batch = holder.reset();
-        }
-        if (batch.isEmpty()) {
-            logger.debug("Holder for group: '{}' has been concurrently reset. Skip storing by scheduler", holder.getGroup());
-            return;
-        }
-
-        persist(batch);
+            if (data.batch.isEmpty())
+                return;
+            persist(data);
+        });
     }
 
 
-    private void persist(GroupedMessageBatchToStore batch) {
+    private void persist(ConsolidatedBatch data) {
+        GroupedMessageBatchToStore batch = data.batch;
         Histogram.Timer timer = metrics.startMeasuringPersistenceLatency();
         try {
-            persistor.persist(batch);
+            persistor.persist(batch, new Callback<>() {
+                @Override
+                public void onSuccess(GroupedMessageBatchToStore batch) {
+                    data.confirmations.forEach(MessageProcessor::confirm);
+                }
+
+                @Override
+                public void onFail(GroupedMessageBatchToStore batch) {
+                    data.confirmations.forEach(MessageProcessor::reject);
+                }
+            });
         } catch (Exception e) {
-            logger.error("Exception storing batch for group {}: {}", batch.getGroup(),
+            logger.error("Exception storing batch for group \"{}\": {}", batch.getGroup(),
                             formatMessageBatchToStore(batch, false), e);
+            data.confirmations.forEach(MessageProcessor::reject);
         } finally {
             timer.observeDuration();
         }
@@ -322,33 +365,15 @@ public class MessageProcessor implements AutoCloseable  {
         return new SessionKey(message.getMetadata().getId());
     }
 
-    private String[] getAttributes() {
-        return MessageProcessor.ATTRIBUTES;
-    }
-
-
-    private MessageToStore convert(RawMessage originalMessage) throws CradleStorageException {
-        return ProtoUtil.toCradleMessage(originalMessage);
-    }
-
-    private CompletableFuture<Void> store(GroupedMessageBatchToStore batch) throws CradleStorageException, IOException {
-        return cradleStorage.storeGroupedMessageBatchAsync(batch);
-    }
-
-
     private long extractSequence(RawMessage message) {
         return message.getMetadata().getId().getSequence();
     }
 
-    private List<RawMessage> getMessages(RawMessageBatch delivery) {
-        return delivery.getMessagesList();
-    }
-
     protected static class SessionKey {
+        public final String bookName;
         public final String sessionAlias;
         public final String sessionGroup;
         public final Direction direction;
-        public final String bookName;
 
         public SessionKey(MessageID messageID) {
             this.sessionAlias = Objects.requireNonNull(messageID.getConnectionId().getSessionAlias(), "'Session alias' parameter");
@@ -379,7 +404,7 @@ public class MessageProcessor implements AutoCloseable  {
 
         @Override
         public String toString() {
-            return new ToStringBuilder(this, NO_CLASS_NAME_STYLE)
+            return new ToStringBuilder(this, ToStringStyle.NO_CLASS_NAME_STYLE)
                     .append("sessionAlias", sessionAlias)
                     .append("sessionGroup", sessionGroup)
                     .append("direction", direction)

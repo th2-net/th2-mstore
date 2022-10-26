@@ -23,6 +23,7 @@ import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.MessageToStoreBuilder;
 import com.exactpro.cradle.messages.StoredMessage;
+import com.exactpro.cradle.testevents.TestEventToStore;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.taskutils.StartableRunnable;
 import org.junit.jupiter.api.AfterEach;
@@ -40,6 +41,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -60,6 +62,8 @@ public class TestMessagePersistor {
     private static final BookId BOOK_ID = new BookId("test-book");
 
     private final CradleStorage storageMock = mock(CradleStorage.class);
+    private final Callback<GroupedMessageBatchToStore> callback = mock(Callback.class);
+
     private MessagePersistor persistor;
 
     private CradleEntitiesFactory cradleObjectsFactory;
@@ -96,12 +100,14 @@ public class TestMessagePersistor {
         GroupedMessageBatchToStore batch = batchOf(group, createMessage(BOOK_ID,"test-session", Direction.FIRST,
                                                                 12, timestamp, "raw message".getBytes()));
 
-        persistor.persist(batch);
+        persistor.persist(batch, callback);
         pause(MESSAGE_PERSIST_TIMEOUT);
 
         ArgumentCaptor<GroupedMessageBatchToStore> capture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
         verify(storageMock, times(1)).storeGroupedMessageBatchAsync(capture.capture());
         verify(persistor, times(1)).processTask(any());
+        verify(callback, times(1)).onSuccess(any());
+        verify(callback, times(0)).onFail(any());
 
         GroupedMessageBatchToStore value = capture.getValue();
         assertNotNull(value, "Captured message batch");
@@ -121,12 +127,14 @@ public class TestMessagePersistor {
         String group = "test-group";
         GroupedMessageBatchToStore batch = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST,
                                                                     12, timestamp, "raw message".getBytes()));
-        persistor.persist(batch);
+        persistor.persist(batch, callback);
         pause(MESSAGE_PERSIST_TIMEOUT * 2);
 
         ArgumentCaptor<GroupedMessageBatchToStore> capture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
         verify(persistor, times(2)).processTask(any());
         verify(storageMock, times(2)).storeGroupedMessageBatchAsync(capture.capture());
+        verify(callback, times(1)).onSuccess(any());
+        verify(callback, times(0)).onFail(any());
 
         GroupedMessageBatchToStore value = capture.getValue();
         assertNotNull(value, "Captured stored message batch");
@@ -147,12 +155,14 @@ public class TestMessagePersistor {
         String group = "test-group";
         GroupedMessageBatchToStore batch = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST, 12,
                                                                             timestamp, "raw message".getBytes()));
-        persistor.persist(batch);
+        persistor.persist(batch, callback);
         pause(MESSAGE_PERSIST_TIMEOUT * (MAX_MESSAGE_PERSIST_RETRIES + 1));
 
         ArgumentCaptor<GroupedMessageBatchToStore> capture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
         verify(persistor, times(MAX_MESSAGE_PERSIST_RETRIES + 1)).processTask(any());
         verify(storageMock, times(MAX_MESSAGE_PERSIST_RETRIES + 1)).storeGroupedMessageBatchAsync(capture.capture());
+        verify(callback, times(0)).onSuccess(any());
+        verify(callback, times(1)).onFail(any());
 
         GroupedMessageBatchToStore value = capture.getValue();
         assertNotNull(value, "Captured stored root event");
@@ -184,7 +194,7 @@ public class TestMessagePersistor {
         StartableRunnable runnable = StartableRunnable.of(() -> {
             try {
                 for (int i = 0; i < totalMessages; i++)
-                    persistor.persist(batch[i]);
+                    persistor.persist(batch[i], callback);
             } catch (Exception e) {
                 logger.error("Exception persisting message batch", e);
                 throw new RuntimeException(e);
@@ -199,6 +209,8 @@ public class TestMessagePersistor {
                 .storeGroupedMessageBatchAsync(any());
         verify(storageMock, after(totalExecutionTime).times(totalMessages))
                 .storeGroupedMessageBatchAsync(any());
+        verify(callback, after(totalExecutionTime).times(totalMessages)).onSuccess(any());
+        verify(callback, after(totalExecutionTime).times(0)).onFail(any());
 
         executor.shutdown();
         executor.awaitTermination(0, TimeUnit.MILLISECONDS);
@@ -234,7 +246,7 @@ public class TestMessagePersistor {
         StartableRunnable runnable = StartableRunnable.of(() -> {
             try {
                 for (int i = 0; i < totalMessages; i++)
-                    persistor.persist(batch[i]);
+                    persistor.persist(batch[i], callback);
             } catch (Exception e) {
                 logger.error("Exception persisting message batch", e);
                 throw new RuntimeException(e);
@@ -249,6 +261,8 @@ public class TestMessagePersistor {
                 .storeGroupedMessageBatchAsync(any());
         verify(storageMock, after(totalExecutionTime).times(totalMessages))
                 .storeGroupedMessageBatchAsync(any());
+        verify(callback, times(totalMessages)).onSuccess(any());
+        verify(callback, times(0)).onFail(any());
 
         executor.shutdown();
         executor.awaitTermination(0, TimeUnit.MILLISECONDS);

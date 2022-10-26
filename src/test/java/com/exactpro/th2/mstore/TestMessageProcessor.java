@@ -22,6 +22,8 @@ import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.*;
+import com.exactpro.th2.common.schema.message.DeliveryMetadata;
+import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.google.protobuf.ByteString;
@@ -55,6 +57,8 @@ class TestMessageProcessor {
 
     @SuppressWarnings("unchecked")
     private final Persistor persistor = mock(Persistor.class);
+    private final DeliveryMetadata deliveryMetadata = new DeliveryMetadata("", false);
+    private final ManualAckDeliveryCallback.Confirmation confirmation = mock(ManualAckDeliveryCallback.Confirmation.class);
 
     private final Random random = new Random();
 
@@ -70,7 +74,7 @@ class TestMessageProcessor {
         when(storageMock.getEntitiesFactory()).thenReturn(cradleEntitiesFactory);
         when(storageMock.getLastSequence(any(), any(), any())).thenReturn(-1L);
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
-        when(routerMock.subscribeAll(any(), any())).thenReturn(mock(SubscriberMonitor.class));
+        when(routerMock.subscribeAllWithManualAck(any(), any(), any())).thenReturn(mock(SubscriberMonitor.class));
         Configuration configuration = Configuration.builder().withDrainInterval(DRAIN_TIMEOUT / 10).build();
         messageStore = spy(createStore(storageMock, routerMock, persistor, configuration));
         messageStore.start();
@@ -144,8 +148,8 @@ class TestMessageProcessor {
         @Test
         @DisplayName("Empty delivery is not stored")
         void testEmptyDelivery() throws Exception {
-            messageStore.handle(deliveryOf());
-            verify(persistor, never()).persist(any());
+            messageStore.process(deliveryMetadata, deliveryOf(), confirmation);
+            verify(persistor, never()).persist(any(), any());
         }
 
         @Test
@@ -155,8 +159,8 @@ class TestMessageProcessor {
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("test", "group",  Direction.FIRST, 2, bookName);
 
-            messageStore.handle(deliveryOf(second, first));
-            verify(persistor, never()).persist(any());
+            messageStore.process(deliveryMetadata, deliveryOf(second, first), confirmation);
+            verify(persistor, never()).persist(any(), any());
         }
 
         @Test
@@ -165,14 +169,14 @@ class TestMessageProcessor {
             String bookName = bookName(random.nextInt());
 
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
-            messageStore.handle(deliveryOf(first));
+            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
 
             RawMessage duplicate = createMessage("test", "group", Direction.FIRST, 1, bookName);
-            messageStore.handle(deliveryOf(duplicate));
+            messageStore.process(deliveryMetadata, deliveryOf(duplicate), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            verify(persistor, timeout(DRAIN_TIMEOUT)).persist(batchCapture.capture());
+            verify(persistor, timeout(DRAIN_TIMEOUT)).persist(batchCapture.capture(), any());
             verify(cradleEntitiesFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/))
                     .groupedMessageBatch(groupCapture.capture());
 
@@ -195,14 +199,14 @@ class TestMessageProcessor {
             String bookName = bookName(random.nextInt());
 
             RawMessage first = createMessage("testA", "group", Direction.FIRST, 1, bookName);
-            messageStore.handle(deliveryOf(first));
+            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
 
             RawMessage duplicate = createMessage("testB", "group", Direction.SECOND, 1, bookName);
-            messageStore.handle(deliveryOf(duplicate));
+            messageStore.process(deliveryMetadata, deliveryOf(duplicate), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(batchCapture.capture());
+            verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(batchCapture.capture(), any());
             int invocations = 2 +  2 /*invocations in SessionBatchHolder (init + reset)*/;
             verify(cradleEntitiesFactory, times(invocations)).groupedMessageBatch(groupCapture.capture());
 
@@ -236,11 +240,11 @@ class TestMessageProcessor {
             String bookName = bookName(random.nextInt());
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
 
-            messageStore.handle(deliveryOf(first));
+            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            verify(persistor, timeout(DRAIN_TIMEOUT)).persist(batchCapture.capture());
+            verify(persistor, timeout(DRAIN_TIMEOUT)).persist(batchCapture.capture(), any());
             verify(cradleEntitiesFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/))
                     .groupedMessageBatch(groupCapture.capture());
 
@@ -259,11 +263,11 @@ class TestMessageProcessor {
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("test", "group", Direction.FIRST, 2, bookName);
 
-            messageStore.handle(deliveryOf(first, second));
+            messageStore.process(deliveryMetadata, deliveryOf(first, second), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            verify(persistor, timeout(DRAIN_TIMEOUT)).persist(batchCapture.capture());
+            verify(persistor, timeout(DRAIN_TIMEOUT)).persist(batchCapture.capture(), any());
             verify(cradleEntitiesFactory, times(1 + 2/*invocations in SessionBatchHolder (init + reset)*/))
                     .groupedMessageBatch(groupCapture.capture());
 
@@ -288,12 +292,12 @@ class TestMessageProcessor {
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("test", "group", Direction.FIRST, 2, bookName);
 
-            messageStore.handle(deliveryOf(first));
-            messageStore.handle(deliveryOf(second));
+            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
+            messageStore.process(deliveryMetadata, deliveryOf(second), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            verify(persistor, timeout(DRAIN_TIMEOUT)).persist(batchCapture.capture());
+            verify(persistor, timeout(DRAIN_TIMEOUT)).persist(batchCapture.capture(), any());
             verify(cradleEntitiesFactory, times(2 + 2/*invocations in SessionBatchHolder (init + reset)*/))
                     .groupedMessageBatch(groupCapture.capture());
 
@@ -316,8 +320,8 @@ class TestMessageProcessor {
         RawMessage first = createMessage("testA", "group", Direction.FIRST, 1, bookName);
         RawMessage second = createMessage("testB", "group", Direction.FIRST, 2, bookName);
 
-        messageStore.handle(deliveryOf(first, second));
-        verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(any());
+        messageStore.process(deliveryMetadata, deliveryOf(first, second), confirmation);
+        verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(any(), any());
     }
 
     @Test
@@ -327,8 +331,8 @@ class TestMessageProcessor {
         RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
         RawMessage second = createMessage("test", "group", Direction.SECOND, 2, bookName);
 
-        messageStore.handle(deliveryOf(first, second));
-        verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(any());
+        messageStore.process(deliveryMetadata, deliveryOf(first, second), confirmation);
+        verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(any(), any());
     }
 
 
@@ -342,12 +346,12 @@ class TestMessageProcessor {
             RawMessage first = createMessage("testA", "group1", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("testB", "group2", Direction.FIRST, 2, bookName);
 
-            messageStore.handle(deliveryOf(first));
-            messageStore.handle(deliveryOf(second));
+            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
+            messageStore.process(deliveryMetadata, deliveryOf(second), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
-            verify(persistor, timeout(DRAIN_TIMEOUT).times(2)).persist(batchCapture.capture());
+            verify(persistor, timeout(DRAIN_TIMEOUT).times(2)).persist(batchCapture.capture(), any());
             verify(cradleEntitiesFactory, times(2 + 4/*invocations in SessionBatchHolder (init + reset)*/))
                     .groupedMessageBatch(groupCapture.capture());
 

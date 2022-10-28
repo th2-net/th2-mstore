@@ -78,23 +78,9 @@ public class MessageProcessor implements AutoCloseable  {
     public void start() {
         if (monitor == null) {
 
-            monitor = router.subscribeAllWithManualAck(new ManualConfirmationListener<>() {
-                @Override
-                public void onClose() {
-
-                }
-
-                @Override
-                public void handle(@NotNull String s, RawMessageBatch rawMessageBatch, @NotNull ManualAckDeliveryCallback.Confirmation confirmation) {
-
-                }
-
-                @Override
-                public void handle(@NotNull DeliveryMetadata deliveryMetadata, RawMessageBatch rawMessageBatch, @NotNull Confirmation confirmation)  {
-                    process(deliveryMetadata, rawMessageBatch, confirmation);
-                }
-
-            }, MessageProcessor.ATTRIBUTES);
+            monitor = router.subscribeAllWithManualAck(
+                    (deliveryMetadata, rawMessageBatch, confirmation) -> process(deliveryMetadata, rawMessageBatch, confirmation),
+                    MessageProcessor.ATTRIBUTES);
             if (monitor != null) {
                 logger.info("RabbitMQ subscription was successful");
             } else {

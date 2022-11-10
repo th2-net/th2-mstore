@@ -1,4 +1,4 @@
-# Overview (4.1.0)
+# Overview (4.1.1)
 
 Message store (mstore) is an important th2 component responsible for storing raw messages into Cradle. Please refer to [Cradle repository] (https://github.com/th2-net/cradleapi/blob/master/README.md) for more details. This component has a pin for listening messages via MQ.
 
@@ -19,9 +19,9 @@ session alias, direction and sequence number are a **compound unique identifier*
 {
   "drain-interval": 1000,
   "termination-timeout": 5000,
-  "maxTaskCount" : 1024,
+  "maxTaskCount" : 256,
   "maxTaskDataSize" : 133169152,
-  "maxRetryCount" : 3,
+  "maxRetryCount" : 1000000,
   "retryDelayBase" : 5000
 }
 ```
@@ -74,6 +74,17 @@ spec:
 This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
 
+## 4.1.1
+
++ Using Cradle 3.1.4. No changes related to message persistence
++ Changed default configuration to
+```json
+{
+    "maxTaskCount" : 256,
+    "maxRetryCount" : 1000000,
+    "retryDelayBase" : 5000
+}
+```
 ## 4.1.0
 + Added metrics collection for Prometheus
 + Limiting simultaneously processed message batches by number and content size

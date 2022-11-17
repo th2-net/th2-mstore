@@ -1,16 +1,23 @@
-name: Dev build and publish Java distributions to sonatype snapshot repository
-#on:
-#  push:
-#    branches-ignore:
-#      - master
-#      - version-*
+name: Dev build and publish docker image to ghcr.io and jar to sonatype repo
+
+
+on:
+  push:
+    branches-ignore:
+      - master
+      - version-*
 
 jobs:
-  build-job:
+  sonatype-job:
     uses: th2-net/.github/.github/workflows/dev-java-publish-sonatype.yml@th2-4253-jar-publishing
     secrets:
       SONATYPE_NEXUS_USERNAME: ${{ secrets.SONATYPE_NEXUS_USERNAME }}
       SONATYPE_NEXUS_PASSWORD: ${{ secrets.SONATYPE_NEXUS_PASSWORD }}
       SONATYPE_GPG_ARMORED_KEY: ${{ secrets.SONATYPE_GPG_ARMORED_KEY }}
       SONATYPE_SIGNING_PASSWORD: ${{ secrets.SONATYPE_SIGNING_PASSWORD }}
+  docker-job:
+    needs: [sonatype-job]
+    uses: th2-net/.github/.github/workflows/dev-java-docker-publish.yml@th2-4253-jar-publishing
+    secrets:
+      CR_PAT: ${{ secrets.CR_PAT }}
 

@@ -17,129 +17,66 @@ package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
-import com.exactpro.th2.common.schema.factory.AbstractCommonFactory;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Deque;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.ReentrantLock;
-
 import static com.exactpro.th2.common.metrics.CommonMetrics.LIVENESS_MONITOR;
 import static com.exactpro.th2.common.metrics.CommonMetrics.READINESS_MONITOR;
 
-public class MessageStore implements AutoCloseable {
-
+public class MessageStore {
     private static final Logger LOGGER = LoggerFactory.getLogger(MessageStore.class);
 
-    private final RawMessageBatchPersistor persistor;
-    private final RawMessageBatchStore rawStore;
-    private final CradleManager cradleManager;
-
-    public MessageStore(AbstractCommonFactory factory, Deque<AutoCloseable> resources) throws Exception {
-        Configuration config = factory.getCustomConfiguration(Configuration.class);
-        if (config == null)
-            config = Configuration.createDefault();
-
-        ObjectMapper mapper = new ObjectMapper();
-        LOGGER.info("Effective configuration:\n{}", mapper.writerWithDefaultPrettyPrinter().writeValueAsString(config));
-
-        cradleManager = factory.getCradleManager();
-        CradleStorage storage = cradleManager.getStorage();
-
-        persistor = new RawMessageBatchPersistor(config, storage);
-        resources.add(persistor);
-
-        rawStore = new RawMessageBatchStore(factory.getMessageRouterRawBatch(),
-                                            storage,
-                                            persistor,
-                                            config);
-        resources.add(rawStore);
-
-    }
-
-    public void start() throws Exception {
-        persistor.start();
-        rawStore.start();
-    }
-
-    @Override
-    public void close () {
-
-        try {
-            cradleManager.close();
-        } catch (Exception e) {
-            LOGGER.error("Cannot dispose cradle manager", e);
-        }
-        LOGGER.info("Storage stopped");
-    }
-
     public static void main(String[] args) {
-        Deque<AutoCloseable> resources = new ConcurrentLinkedDeque<>();
-        ReentrantLock lock = new ReentrantLock();
-        Condition condition = lock.newCondition();
 
-        configureShutdownHook(resources, lock, condition);
+        ShutdownManager shutdownManager = new ShutdownManager();
         try {
             LIVENESS_MONITOR.enable();
+            shutdownManager.register();
 
+            // Load configuration
             CommonFactory factory = CommonFactory.createFromArguments(args);
-            resources.add(factory);
+            shutdownManager.registerResource(factory);
 
-            MessageStore store = new MessageStore(factory, resources);
-            resources.add(store);
-            store.start();
+            Configuration config = factory.getCustomConfiguration(Configuration.class);
+            if (config == null)
+                config = Configuration.createDefault();
+
+            ObjectMapper mapper = new ObjectMapper();
+            LOGGER.info("Effective configuration:\n{}", mapper.writerWithDefaultPrettyPrinter().writeValueAsString(config));
+
+            // Initialize Cradle
+            CradleManager cradleManager = factory.getCradleManager();
+            shutdownManager.registerResource(cradleManager);
+            CradleStorage storage = cradleManager.getStorage();
+
+            // Initialize persistor
+            MessagePersistor persistor = new MessagePersistor(config, storage);
+            shutdownManager.registerResource(persistor);
+
+            // Initialize processor
+            MessageProcessor processor = new MessageProcessor(factory.getMessageRouterRawBatch(),
+                                                                storage,
+                                                                persistor,
+                                                                config);
+            shutdownManager.registerResource(processor);
+
+            persistor.start();
+            processor.start();
 
             READINESS_MONITOR.enable();
-            LOGGER.info("message store started");
+            LOGGER.info("mstore started");
 
-            awaitShutdown(lock, condition);
+            shutdownManager.awaitShutdown();
+
         } catch (InterruptedException e) {
-            LOGGER.info("The main thread interrupted", e);
+            LOGGER.info("The main thread has been interrupted", e);
         } catch (Exception e) {
             LOGGER.error("Fatal error: {}", e.getMessage(), e);
+            shutdownManager.closeResources();
             System.exit(1);
         }
-    }
-
-    private static void awaitShutdown(ReentrantLock lock, Condition condition) throws InterruptedException {
-        try {
-            lock.lock();
-            LOGGER.info("Waiting for shutdown");
-            condition.await();
-            LOGGER.info("Message Store shutdown");
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    private static void configureShutdownHook(Deque<AutoCloseable> resources, ReentrantLock lock, Condition condition) {
-        Runtime.getRuntime().addShutdownHook(new Thread("Shutdown hook") {
-            @Override
-            public void run() {
-                LOGGER.info("Shutdown start");
-                READINESS_MONITOR.disable();
-                try {
-                    lock.lock();
-                    condition.signalAll();
-                } finally {
-                    lock.unlock();
-                }
-
-                resources.descendingIterator().forEachRemaining(resource -> {
-                    try {
-                        resource.close();
-                    } catch (Exception e) {
-                        LOGGER.error(e.getMessage(), e);
-                    }
-                });
-                LIVENESS_MONITOR.disable();
-                LOGGER.info("Shutdown end");
-            }
-        });
+        LOGGER.info("mstore stopped");
     }
 }
-

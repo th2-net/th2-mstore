@@ -33,9 +33,9 @@ import java.util.concurrent.TimeUnit;
 
 import static java.util.Objects.requireNonNull;
 
-public class RawMessageBatchPersistor implements Runnable, AutoCloseable, Persistor<GroupedMessageBatchToStore> {
+public class MessagePersistor implements Runnable, AutoCloseable, Persistor<GroupedMessageBatchToStore> {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(RawMessageBatchPersistor.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(MessagePersistor.class);
     private static final String THREAD_NAME_PREFIX = "MessageBatch-persistor-thread-";
 
     private final BlockingScheduledRetryableTaskQueue<GroupedMessageBatchToStore> taskQueue;
@@ -49,11 +49,11 @@ public class RawMessageBatchPersistor implements Runnable, AutoCloseable, Persis
     private volatile boolean stopped;
     private final Object signal = new Object();
 
-    public RawMessageBatchPersistor(@NotNull Configuration config, @NotNull CradleStorage cradleStorage) {
+    public MessagePersistor(@NotNull Configuration config, @NotNull CradleStorage cradleStorage) {
         this(config, cradleStorage, (r) -> config.getRetryDelayBase() * 1_000_000 * (r + 1));
     }
 
-    public RawMessageBatchPersistor(@NotNull Configuration config, @NotNull CradleStorage cradleStorage, RetryScheduler scheduler) {
+    public MessagePersistor(@NotNull Configuration config, @NotNull CradleStorage cradleStorage, RetryScheduler scheduler) {
         this.maxTaskRetries = config.getMaxRetryCount();
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.taskQueue = new BlockingScheduledRetryableTaskQueue<>(config.getMaxTaskCount(), config.getMaxTaskDataSize(), scheduler);

@@ -38,12 +38,12 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
     private static final Logger LOGGER = LoggerFactory.getLogger(MessagePersistor.class);
     private static final String THREAD_NAME_PREFIX = "MessageBatch-persistor-thread-";
 
-    private final BlockingScheduledRetryableTaskQueue<GroupedMessageBatchToStore> taskQueue;
+    private final BlockingScheduledRetryableTaskQueue<PersistenceTask<GroupedMessageBatchToStore>> taskQueue;
     private final int maxTaskRetries;
     private final CradleStorage cradleStorage;
     private final FutureTracker<Void> futures;
 
-    private final MessagePersistorMetrics metrics;
+    private final MessagePersistorMetrics<PersistenceTask<GroupedMessageBatchToStore>> metrics;
     private final ScheduledExecutorService samplerService;
 
     private volatile boolean stopped;
@@ -59,7 +59,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         this.taskQueue = new BlockingScheduledRetryableTaskQueue<>(config.getMaxTaskCount(), config.getMaxTaskDataSize(), scheduler);
         this.futures = new FutureTracker<>();
 
-        this.metrics = new MessagePersistorMetrics(taskQueue);
+        this.metrics = new MessagePersistorMetrics<>(taskQueue);
         this.samplerService = Executors.newSingleThreadScheduledExecutor();
     }
 
@@ -87,7 +87,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         );
         while (!stopped) {
             try {
-                ScheduledRetryableTask<GroupedMessageBatchToStore> task = taskQueue.awaitScheduled();
+                ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task = taskQueue.awaitScheduled();
                 try {
                     processTask(task);
                 } catch (Exception e) {
@@ -100,9 +100,9 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         }
     }
 
-    void processTask(ScheduledRetryableTask<GroupedMessageBatchToStore> task) throws Exception {
+    void processTask(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task) throws Exception {
 
-        final GroupedMessageBatchToStore batch = task.getPayload();
+        final GroupedMessageBatchToStore batch = task.getPayload().data;
         final Histogram.Timer timer = metrics.startMeasuringPersistenceLatency();
 
         CompletableFuture<Void> result = cradleStorage.storeGroupedMessageBatchAsync(batch)
@@ -110,11 +110,12 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                 .whenCompleteAsync((unused, ex) ->
                         {
                             timer.observeDuration();
-                            if (ex != null)
+                            if (ex != null) {
                                 logAndRetry(task, ex);
-                            else {
+                            } else {
                                 taskQueue.complete(task);
                                 metrics.updateMessageMeasurements(batch.getMessageCount(), task.getPayloadSize());
+                                task.getPayload().complete();
                             }
                         }
                 );
@@ -140,10 +141,10 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         }
     }
 
-    private void logAndRetry(ScheduledRetryableTask<GroupedMessageBatchToStore> task, Throwable e) {
+    private void logAndRetry(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, Throwable e) {
 
         int retriesDone = task.getRetriesDone() + 1;
-        final GroupedMessageBatchToStore messageBatch = task.getPayload();
+        final GroupedMessageBatchToStore messageBatch = task.getPayload().data;
 
         if (task.getRetriesLeft() > 0) {
 
@@ -162,19 +163,40 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                     messageBatch.getGroup(),
                     retriesDone,
                     e);
-
+            task.getPayload().fail();
         }
     }
 
     @Override
-    public void persist(GroupedMessageBatchToStore data) {
+    public void persist(GroupedMessageBatchToStore data, Callback<GroupedMessageBatchToStore> callback) {
         metrics.takeQueueMeasurements();
         taskQueue.submit(
                 new ScheduledRetryableTask<>(
                         System.nanoTime(),
                         maxTaskRetries,
                         data.getBatchSize(),
-                        data)
+                        new PersistenceTask<>(data, callback))
         );
+    }
+
+
+    private static class PersistenceTask<V> {
+        final V data;
+        final Callback<V> callback;
+
+        PersistenceTask(V data, Callback<V> callback) {
+            this.data = data;
+            this.callback = callback;
+        }
+
+        void complete() {
+            if (callback != null)
+                callback.onSuccess(data);
+        }
+
+        void fail() {
+            if (callback != null)
+                callback.onFail(data);
+        }
     }
 }

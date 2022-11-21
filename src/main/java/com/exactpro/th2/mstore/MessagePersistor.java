@@ -43,7 +43,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
     private final CradleStorage cradleStorage;
     private final FutureTracker<Void> futures;
 
-    private final MessagePersistorMetrics metrics;
+    private final MessagePersistorMetrics<PersistenceTask<GroupedMessageBatchToStore>> metrics;
     private final ScheduledExecutorService samplerService;
 
     private volatile boolean stopped;
@@ -59,7 +59,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         this.taskQueue = new BlockingScheduledRetryableTaskQueue<>(config.getMaxTaskCount(), config.getMaxTaskDataSize(), scheduler);
         this.futures = new FutureTracker<>();
 
-        this.metrics = new MessagePersistorMetrics(taskQueue);
+        this.metrics = new MessagePersistorMetrics<>(taskQueue);
         this.samplerService = Executors.newSingleThreadScheduledExecutor();
     }
 
@@ -175,7 +175,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                         System.nanoTime(),
                         maxTaskRetries,
                         data.getBatchSize(),
-                        new PersistenceTask(data, callback))
+                        new PersistenceTask<>(data, callback))
         );
     }
 

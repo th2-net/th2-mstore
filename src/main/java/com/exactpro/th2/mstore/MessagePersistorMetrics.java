@@ -20,7 +20,7 @@ import io.prometheus.client.Counter;
 import io.prometheus.client.Gauge;
 import io.prometheus.client.Histogram;
 
-public class MessagePersistorMetrics {
+public class MessagePersistorMetrics<V> {
     private static final Gauge GAUGE_QUEUE_TASK_CAPACITY = Gauge
             .build("th2_mstore_persistor_queue_task_capacity", "Message queue size").register();
 
@@ -65,9 +65,9 @@ public class MessagePersistorMetrics {
             .buckets(0.010, 0.020, 0.050, 0.100, 0.200, 0.300, 0.400, 0.500, 1.000, 1.500, 2.000, 2.500, 3.000, 4.000, 5.000, 10.000)
             .register();
 
-    private final BlockingScheduledRetryableTaskQueue taskQueue;
+    private final BlockingScheduledRetryableTaskQueue<V> taskQueue;
 
-    public MessagePersistorMetrics(BlockingScheduledRetryableTaskQueue taskQueue) {
+    public MessagePersistorMetrics(BlockingScheduledRetryableTaskQueue<V> taskQueue) {
         this.taskQueue = taskQueue;
 
     }

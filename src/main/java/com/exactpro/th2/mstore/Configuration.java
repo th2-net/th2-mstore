@@ -70,8 +70,8 @@ public class Configuration {
     public static final class Builder {
         private static final long DEFAULT_DRAIN_INTERVAL = 1000L;
         private static final long DEFAULT_WAIT_TIMEOUT = 5000L;
-        private static final int DEFAULT_MAX_TASK_RETRIES = 3;
-        private static final int DEFAULT_MAX_TASK_COUNT = 1024;
+        private static final int DEFAULT_MAX_TASK_RETRIES = 1000000;
+        private static final int DEFAULT_MAX_TASK_COUNT = 256;
         private static final long DEFAULT_RETRY_DELAY_BASEM_MS = 5000;
 
         @JsonProperty("drain-interval")

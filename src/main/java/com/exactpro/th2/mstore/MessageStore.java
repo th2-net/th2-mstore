@@ -75,7 +75,7 @@ public class MessageStore {
         } catch (Exception e) {
             LOGGER.error("Fatal error: {}", e.getMessage(), e);
             shutdownManager.closeResources();
-            System.exit(0);
+            System.exit(1);
         }
         LOGGER.info("mstore stopped");
     }

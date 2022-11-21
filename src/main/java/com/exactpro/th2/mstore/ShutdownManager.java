@@ -53,8 +53,8 @@ public final class ShutdownManager {
             LOGGER.info("Shutdown started");
             READINESS_MONITOR.disable();
 
-            signalShutdown();
             closeResources();
+            signalShutdown();
 
             LIVENESS_MONITOR.disable();
             LOGGER.info("Shutdown ended");

@@ -18,8 +18,13 @@ package com.exactpro.th2.mstore;
 import com.exactpro.cradle.CradleEntitiesFactory;
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.cassandra.dao.messages.MessagesIteratorProvider;
+import com.exactpro.cradle.cassandra.resultset.CassandraCradleResultSet;
+import com.exactpro.cradle.cassandra.resultset.IteratorProvider;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.cradle.messages.MessageFilter;
 import com.exactpro.cradle.messages.StoredMessage;
+import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.*;
 import com.exactpro.th2.common.schema.message.DeliveryMetadata;
@@ -71,8 +76,11 @@ class TestMessageProcessor {
     void setUp() throws CradleStorageException, IOException {
         cradleEntitiesFactory = spy(new CradleEntitiesFactory(TEST_MESSAGE_BATCH_SIZE, TEST_EVENT_BATCH_SIZE));
 
+        CassandraCradleResultSet rsMock = mock(CassandraCradleResultSet.class);
+        when(rsMock.next()).thenReturn(null);
+        when(storageMock.getMessages(any())).thenReturn(rsMock);
+
         when(storageMock.getEntitiesFactory()).thenReturn(cradleEntitiesFactory);
-        when(storageMock.getLastSequence(any(), any(), any())).thenReturn(-1L);
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         when(routerMock.subscribeAllWithManualAck(any(), any(), any())).thenReturn(mock(SubscriberMonitor.class));
         Configuration configuration = Configuration.builder().withDrainInterval(DRAIN_TIMEOUT / 10).build();
@@ -311,6 +319,22 @@ class TestMessageProcessor {
             assertAllGroupValuesMatchTo(groupCapture, "group", 4);
         }
 
+        @Test
+        @DisplayName("Several deliveries have one session, increasing sequences, but decreasing timestamps")
+        void rejectsDecreasingTimestamps () throws Exception {
+            String bookName = bookName(random.nextInt());
+            RawMessage second = createMessage("test", "group", Direction.FIRST, 2, bookName);
+            RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
+
+            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
+            messageStore.process(deliveryMetadata, deliveryOf(second), confirmation);
+
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
+
+            verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(batchCapture.capture(), any());
+            verify(confirmation, timeout(DRAIN_TIMEOUT).times(1)).reject();
+
+        }
     }
 
     @Test

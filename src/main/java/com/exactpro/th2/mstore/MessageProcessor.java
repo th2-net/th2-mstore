@@ -18,10 +18,9 @@ package com.exactpro.th2.mstore;
 import com.exactpro.cradle.BookId;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.Direction;
-import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
-import com.exactpro.cradle.messages.MessageToStore;
-import com.exactpro.cradle.messages.StoredMessage;
-import com.exactpro.cradle.messages.StoredMessageId;
+import com.exactpro.cradle.Order;
+import com.exactpro.cradle.filters.FilterForLess;
+import com.exactpro.cradle.messages.*;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
@@ -35,17 +34,24 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
+import static com.exactpro.th2.common.message.MessageUtils.toTimestamp;
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
+import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 import static com.google.protobuf.TextFormat.shortDebugString;
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
+import static java.util.function.BinaryOperator.maxBy;
 
 public class MessageProcessor implements AutoCloseable  {
     private static final Logger logger = LoggerFactory.getLogger(MessageProcessor.class);
@@ -154,10 +160,10 @@ public class MessageProcessor implements AutoCloseable  {
             for (RawMessage message: messages) {
                 SessionKey sessionKey = createSessionKey(message);
                 group = sessionKey.sessionGroup;
-                long sequence = extractSequence(message);
+                MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message);
                 SessionData sessionData = sessions.computeIfAbsent(sessionKey, k -> new SessionData());
 
-                sessionData.getAndUpdateSequence(sequence);
+                sessionData.getAndUpdateOrderingProperties(sequenceToTimestamp);
             }
 
             if (deliveryMetadata.isRedelivered()) {
@@ -171,6 +177,12 @@ public class MessageProcessor implements AutoCloseable  {
         }
     }
 
+    protected MessageOrderingProperties extractOrderingProperties(RawMessage message) {
+        return new MessageOrderingProperties(
+                message.getMetadata().getId().getSequence(),
+                message.getMetadata().getId().getTimestamp()
+        );
+    }
 
     private static void confirm(Confirmation confirmation) {
         try {
@@ -244,59 +256,84 @@ public class MessageProcessor implements AutoCloseable  {
 
     private void verifyBatch(List<RawMessage> messages) {
         HashMap<SessionKey, SessionData> localCache = new HashMap<>();
-        SessionKey lastKey = null;
-        long prevSequence = Long.MIN_VALUE;
+        SessionKey firstSessionKey = null;
         for (int i = 0; i < messages.size(); i++) {
             RawMessage message = messages.get(i);
+
             SessionKey sessionKey = createSessionKey(message);
-            long currentSeq = extractSequence(message);
+            if (firstSessionKey == null)
+                firstSessionKey = sessionKey;
 
-            if (localCache.containsKey(sessionKey)) {
-                prevSequence = localCache.get(sessionKey).lastSequence.get();
-            } else if(sessions.containsKey(sessionKey)) {
-                prevSequence = sessions.get(sessionKey).lastSequence.get();
+            if(!firstSessionKey.sessionGroup.equals(sessionKey.sessionGroup)){
+                throw new IllegalArgumentException(format(
+                        "Delivery contains different session groups. Message [%d] - sequence %s; Message [%d] - sequence %s",
+                        i - 1,
+                        firstSessionKey,
+                        i,
+                        sessionKey
+                ));
+            }
+
+            MessageOrderingProperties orderingProperties = extractOrderingProperties(message);
+            MessageOrderingProperties lastOrderingProperties;
+            if (sessions.containsKey(sessionKey)){
+                lastOrderingProperties = sessions.get(sessionKey).getLastOrderingProperties();
             } else {
-                prevSequence = getLastMessageSequence(sessionKey);
+                lastOrderingProperties = loadLastOrderingProperties(sessionKey);
             }
 
-            if (lastKey == null) {
-                lastKey = sessionKey;
-            } else {
-                if (!lastKey.sessionGroup.equals(sessionKey.sessionGroup)) {
-                    throw new IllegalArgumentException(
-                            String.format(
-                                    "Delivery contains different session groups. Message [%d] - session %s; Message [%d] - session %s",
-                                    i - 1, lastKey, i, sessionKey
-                            )
-                    );
-                }
-            }
-
-            if (prevSequence >= currentSeq) {
-                throw new IllegalArgumentException(
-                        String.format(
-                                "Delivery contains unordered messages. Message [%d] - seqN %d; Message [%d] - seqN %d",
-                                i - 1, prevSequence, i, currentSeq
-                        )
-                );
-            }
-            SessionData sessionData = new SessionData();
-            sessionData.getAndUpdateSequence(currentSeq);
-            localCache.put(sessionKey, sessionData);
+            verifyOrderingProperties(i, lastOrderingProperties, orderingProperties);
         }
     }
 
+    private void verifyOrderingProperties(
+            int messageIndex,
+            MessageOrderingProperties previous,
+            MessageOrderingProperties current
+    ) {
+        if (current.sequenceIsLessOrEquals(previous)) {
+            throw new IllegalArgumentException(format(
+                    "Delivery contains unordered messages. Message [%d] - sequence %d; Message [%d] - sequence %d",
+                    messageIndex - 1,
+                    previous.getSequence(),
+                    messageIndex,
+                    current.getSequence()
+            ));
+        }
+        if (current.timestampIsLess(previous)) {
+            throw new IllegalArgumentException(format(
+                    "Delivery contains unordered messages. Message [%d] - timestamp %s; Message [%d] - timestamp %s",
+                    messageIndex - 1,
+                    toInstant(previous.getTimestamp()),
+                    messageIndex,
+                    toInstant(current.getTimestamp())
+            ));
+        }
+    }
 
-    private long getLastMessageSequence(SessionKey sessionKey) {
-        long lastMessageSequence = Long.MIN_VALUE;
+    private MessageOrderingProperties loadLastOrderingProperties(SessionKey sessionKey){
+        long lastMessageSequence;
+        Instant lastMessageTimestamp;
         try {
-            lastMessageSequence = cradleStorage.getLastSequence(sessionKey.sessionAlias, sessionKey.direction, new BookId(sessionKey.bookName));
-        } catch (Exception e) {
-            logger.error("Couldn't get sequence of last message from cradle: {}", e.getMessage());
-        }
-        return lastMessageSequence;
-    }
+            MessageFilter messageFilter = new MessageFilter(new BookId(sessionKey.bookName), sessionKey.sessionAlias, sessionKey.direction);
+            messageFilter.setTimestampTo(FilterForLess.forLess(Instant.now()));
+            messageFilter.setOrder(Order.REVERSE);
+            messageFilter.setLimit(1);
+            StoredMessage message = cradleStorage.getMessages(messageFilter).next();
 
+            if (message == null) {
+                return MessageOrderingProperties.MIN_VALUE;
+            }
+
+            lastMessageSequence = message.getSequence();
+            lastMessageTimestamp = message.getTimestamp();
+        } catch (CradleStorageException | IOException e) {
+            logger.error("Couldn't get last message from cradle: {}", e.getMessage());
+            return MessageOrderingProperties.MIN_VALUE;
+        }
+
+        return new MessageOrderingProperties(lastMessageSequence, toTimestamp(lastMessageTimestamp));
+    }
 
     private void drainByScheduler() {
         logger.debug("Starting scheduled cache drain");
@@ -398,13 +435,18 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
     static class SessionData {
-        private final AtomicLong lastSequence = new AtomicLong(Long.MIN_VALUE);
+        private final AtomicReference<MessageOrderingProperties> lastOrderingProperties =
+                new AtomicReference<>(MessageOrderingProperties.MIN_VALUE);
 
         SessionData() {
         }
 
-        public long getAndUpdateSequence(long newLastSeq) {
-            return lastSequence.getAndAccumulate(newLastSeq, Math::max);
+        public MessageOrderingProperties getAndUpdateOrderingProperties(MessageOrderingProperties orderingProperties) {
+            return lastOrderingProperties.getAndAccumulate(orderingProperties, maxBy(MessageOrderingProperties.COMPARATOR));
+        }
+
+        public MessageOrderingProperties getLastOrderingProperties() {
+            return lastOrderingProperties.get();
         }
     }
 }

@@ -323,11 +323,11 @@ class TestMessageProcessor {
         @DisplayName("Several deliveries have one session, increasing sequences, but decreasing timestamps")
         void rejectsDecreasingTimestamps () throws Exception {
             String bookName = bookName(random.nextInt());
-            RawMessage second = createMessage("test", "group", Direction.FIRST, 2, bookName);
-            RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
+            RawMessage secondToProcess = createMessage("test", "group", Direction.FIRST, 2, bookName);
+            RawMessage firstToProcess = createMessage("test", "group", Direction.FIRST, 1, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
-            messageStore.process(deliveryMetadata, deliveryOf(second), confirmation);
+            messageStore.process(deliveryMetadata, deliveryOf(firstToProcess), confirmation);
+            messageStore.process(deliveryMetadata, deliveryOf(secondToProcess), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
 

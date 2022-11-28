@@ -21,6 +21,7 @@ import com.exactpro.cradle.Direction;
 import com.exactpro.cradle.Order;
 import com.exactpro.cradle.filters.FilterForLess;
 import com.exactpro.cradle.messages.*;
+import com.exactpro.cradle.resultset.CradleResultSet;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
@@ -319,7 +320,13 @@ public class MessageProcessor implements AutoCloseable  {
             messageFilter.setTimestampTo(FilterForLess.forLess(Instant.now()));
             messageFilter.setOrder(Order.REVERSE);
             messageFilter.setLimit(1);
-            StoredMessage message = cradleStorage.getMessages(messageFilter).next();
+            CradleResultSet<StoredMessage> res = cradleStorage.getMessages(messageFilter);
+
+            if (res == null) {
+                return MessageOrderingProperties.MIN_VALUE;
+            }
+
+            StoredMessage message = res.next();
 
             if (message == null) {
                 return MessageOrderingProperties.MIN_VALUE;

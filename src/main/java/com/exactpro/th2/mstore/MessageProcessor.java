@@ -26,6 +26,7 @@ import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
+import com.exactpro.th2.common.message.SessionKey;
 import com.exactpro.th2.common.schema.message.*;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
 import io.prometheus.client.Histogram;
@@ -273,13 +274,19 @@ public class MessageProcessor implements AutoCloseable  {
 
             MessageOrderingProperties orderingProperties = extractOrderingProperties(message);
             MessageOrderingProperties lastOrderingProperties;
-            if (sessions.containsKey(sessionKey)){
+            if (localCache.containsKey(sessionKey)) {
+                lastOrderingProperties = localCache.get(sessionKey).getLastOrderingProperties();
+            }else if (sessions.containsKey(sessionKey)){
                 lastOrderingProperties = sessions.get(sessionKey).getLastOrderingProperties();
             } else {
                 lastOrderingProperties = loadLastOrderingProperties(sessionKey);
             }
 
             verifyOrderingProperties(i, lastOrderingProperties, orderingProperties);
+
+            SessionData sessionData = new SessionData();
+            sessionData.getAndUpdateOrderingProperties(orderingProperties);
+            localCache.put(sessionKey, sessionData);
         }
     }
 

@@ -338,7 +338,7 @@ public class MessageProcessor implements AutoCloseable  {
             lastMessageSequence = message.getSequence();
             lastMessageTimestamp = message.getTimestamp();
         } catch (CradleStorageException | IOException | NoSuchElementException e) {
-            logger.error("Couldn't get last message from cradle: {}", e.getMessage());
+            logger.trace("Couldn't get last message from cradle: {}", e.getMessage());
             return MessageOrderingProperties.MIN_VALUE;
         }
 

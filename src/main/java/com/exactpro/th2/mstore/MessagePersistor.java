@@ -16,6 +16,8 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.exception.BookNotFoundException;
+import com.exactpro.cradle.exception.PageNotFoundException;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.th2.taskutils.BlockingScheduledRetryableTaskQueue;
 import com.exactpro.th2.taskutils.FutureTracker;
@@ -111,7 +113,13 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                         {
                             timer.observeDuration();
                             if (ex != null) {
-                                logAndRetry(task, ex);
+                                // If following exceptions were thrown there's no point in retrying
+                                if (ex instanceof BookNotFoundException || ex instanceof PageNotFoundException) {
+                                    logAndFail(task, String.format("Can't retry after %s exception", ex.getClass()), ex);
+                                } else {
+                                    logAndRetry(task, ex);
+
+                                }
                             } else {
                                 taskQueue.complete(task);
                                 metrics.updateMessageMeasurements(batch.getMessageCount(), task.getPayloadSize());
@@ -157,14 +165,19 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
         } else {
 
-            taskQueue.complete(task);
-            metrics.registerAbortedPersistence();
-            LOGGER.error("Failed to store the message batch for group '{}', aborting after {} executions",
-                    messageBatch.getGroup(),
-                    retriesDone,
+            logAndFail(task,
+                    String.format("Failed to store the message batch for group '%s', aborting after %d executions",
+                            messageBatch.getGroup(),
+                            retriesDone),
                     e);
-            task.getPayload().fail();
         }
+    }
+
+    private void logAndFail(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, String LogMessage, Throwable e) {
+        taskQueue.complete(task);
+        metrics.registerAbortedPersistence();
+        LOGGER.error(LogMessage, e);
+        task.getPayload().fail();
     }
 
     @Override

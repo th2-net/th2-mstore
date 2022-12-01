@@ -93,7 +93,11 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                 try {
                     processTask(task);
                 } catch (Exception e) {
-                    logAndRetry(task, e);
+                    if (e instanceof BookNotFoundException || e instanceof PageNotFoundException) {
+                        logAndFail(task, String.format("Can't retry after %s exception", e.getClass()), e);
+                    } else {
+                        logAndRetry(task, e);
+                    }
                 }
             } catch (InterruptedException ie) {
                 LOGGER.debug("Received InterruptedException. aborting");
@@ -118,7 +122,6 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                                     logAndFail(task, String.format("Can't retry after %s exception", ex.getClass()), ex);
                                 } else {
                                     logAndRetry(task, ex);
-
                                 }
                             } else {
                                 taskQueue.complete(task);
@@ -173,10 +176,10 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         }
     }
 
-    private void logAndFail(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, String LogMessage, Throwable e) {
+    private void logAndFail(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, String logMessage, Throwable e) {
         taskQueue.complete(task);
         metrics.registerAbortedPersistence();
-        LOGGER.error(LogMessage, e);
+        LOGGER.error(logMessage, e);
         task.getPayload().fail();
     }
 

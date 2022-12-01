@@ -94,7 +94,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                     processTask(task);
                 } catch (Exception e) {
                     if (e instanceof BookNotFoundException || e instanceof PageNotFoundException) {
-                        logAndFail(task, String.format("Can't retry after %s exception", e.getClass()), e);
+                        logAndFail(task, String.format("Can't retry after %s exception", e.getClass().getName()), e);
                     } else {
                         logAndRetry(task, e);
                     }

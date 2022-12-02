@@ -16,8 +16,8 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleStorage;
-import com.exactpro.cradle.exception.BookNotFoundException;
-import com.exactpro.cradle.exception.PageNotFoundException;
+import com.exactpro.cradle.errors.BookNotFoundException;
+import com.exactpro.cradle.errors.PageNotFoundException;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.th2.taskutils.BlockingScheduledRetryableTaskQueue;
 import com.exactpro.th2.taskutils.FutureTracker;
@@ -93,11 +93,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                 try {
                     processTask(task);
                 } catch (Exception e) {
-                    if (e instanceof BookNotFoundException || e instanceof PageNotFoundException) {
-                        logAndFail(task, String.format("Can't retry after %s exception", e.getClass().getSimpleName()), e);
-                    } else {
-                        logAndRetry(task, e);
-                    }
+                    resolveTaskError(task, e);
                 }
             } catch (InterruptedException ie) {
                 LOGGER.debug("Received InterruptedException. aborting");
@@ -117,12 +113,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                         {
                             timer.observeDuration();
                             if (ex != null) {
-                                // If following exceptions were thrown there's no point in retrying
-                                if (ex instanceof BookNotFoundException || ex instanceof PageNotFoundException) {
-                                    logAndFail(task, String.format("Can't retry after %s exception", ex.getClass()), ex);
-                                } else {
-                                    logAndRetry(task, ex);
-                                }
+                                resolveTaskError(task, ex);
                             } else {
                                 taskQueue.complete(task);
                                 metrics.updateMessageMeasurements(batch.getMessageCount(), task.getPayloadSize());
@@ -132,6 +123,15 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                 );
 
         futures.track(result);
+    }
+
+    private void resolveTaskError(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, Throwable e) {
+        if (e instanceof BookNotFoundException || e instanceof PageNotFoundException) {
+            // If following exceptions were thrown there's no point in retrying
+            logAndFail(task, String.format("Can't retry after %s exception", e.getClass()), e);
+        } else {
+            logAndRetry(task, e);
+        }
     }
 
     @Override

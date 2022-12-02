@@ -16,6 +16,8 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.errors.BookNotFoundException;
+import com.exactpro.cradle.errors.PageNotFoundException;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.th2.taskutils.BlockingScheduledRetryableTaskQueue;
 import com.exactpro.th2.taskutils.FutureTracker;
@@ -91,7 +93,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                 try {
                     processTask(task);
                 } catch (Exception e) {
-                    logAndRetry(task, e);
+                    resolveTaskError(task, e);
                 }
             } catch (InterruptedException ie) {
                 LOGGER.debug("Received InterruptedException. aborting");
@@ -111,7 +113,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                         {
                             timer.observeDuration();
                             if (ex != null) {
-                                logAndRetry(task, ex);
+                                resolveTaskError(task, ex);
                             } else {
                                 taskQueue.complete(task);
                                 metrics.updateMessageMeasurements(batch.getMessageCount(), task.getPayloadSize());
@@ -121,6 +123,15 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                 );
 
         futures.track(result);
+    }
+
+    private void resolveTaskError(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, Throwable e) {
+        if (e instanceof BookNotFoundException || e instanceof PageNotFoundException) {
+            // If following exceptions were thrown there's no point in retrying
+            logAndFail(task, String.format("Can't retry after %s exception", e.getClass()), e);
+        } else {
+            logAndRetry(task, e);
+        }
     }
 
     @Override
@@ -157,14 +168,19 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
         } else {
 
-            taskQueue.complete(task);
-            metrics.registerAbortedPersistence();
-            LOGGER.error("Failed to store the message batch for group '{}', aborting after {} executions",
-                    messageBatch.getGroup(),
-                    retriesDone,
+            logAndFail(task,
+                    String.format("Failed to store the message batch for group '%s', aborting after %d executions",
+                            messageBatch.getGroup(),
+                            retriesDone),
                     e);
-            task.getPayload().fail();
         }
+    }
+
+    private void logAndFail(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, String logMessage, Throwable e) {
+        taskQueue.complete(task);
+        metrics.registerAbortedPersistence();
+        LOGGER.error(logMessage, e);
+        task.getPayload().fail();
     }
 
     @Override

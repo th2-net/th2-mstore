@@ -142,6 +142,7 @@ public class MessageProcessor implements AutoCloseable  {
 
 
     void process(DeliveryMetadata deliveryMetadata, RawMessageBatch messageBatch, Confirmation confirmation) {
+        Histogram.Timer timer = metrics.startMeasuringProcessingLatency();
         try {
             List<RawMessage> messages = messageBatch.getMessagesList();
             if (messages.isEmpty()) {
@@ -172,6 +173,8 @@ public class MessageProcessor implements AutoCloseable  {
         } catch (Exception ex) {
             logger.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
             reject(confirmation);
+        } finally {
+            timer.observeDuration();
         }
     }
 

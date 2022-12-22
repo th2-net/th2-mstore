@@ -68,8 +68,6 @@ public class MessageProcessor implements AutoCloseable  {
     private final Integer prefetchCount;
     private final AtomicInteger batchCounter;
 
-    private final Integer PREFETCH_DELTA = 10;
-
     public MessageProcessor(
             @NotNull MessageRouter<RawMessageBatch> router,
             @NotNull CradleStorage cradleStorage,
@@ -179,7 +177,7 @@ public class MessageProcessor implements AutoCloseable  {
 
 
             if (prefetchCount != 0) {
-                if (batchCounter.incrementAndGet() > prefetchCount - PREFETCH_DELTA) {
+                if (batchCounter.incrementAndGet() > prefetchCount * configuration.getPrefetchRatioToDrain()) {
                     drainExecutor.submit(() -> {
                         drain(true);
                     });

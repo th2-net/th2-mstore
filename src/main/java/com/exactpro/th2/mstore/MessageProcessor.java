@@ -26,7 +26,6 @@ import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
-import com.exactpro.th2.common.message.SessionKey;
 import com.exactpro.th2.common.schema.message.*;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
 import io.prometheus.client.Histogram;
@@ -40,6 +39,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -65,18 +65,25 @@ public class MessageProcessor implements AutoCloseable  {
     private SubscriberMonitor monitor;
     private final Persistor<GroupedMessageBatchToStore> persistor;
     private final MessageProcessorMetrics metrics;
+    private final Integer prefetchCount;
+    private final AtomicInteger batchCounter;
+
+    private final Integer PREFETCH_DELTA = 10;
 
     public MessageProcessor(
             @NotNull MessageRouter<RawMessageBatch> router,
             @NotNull CradleStorage cradleStorage,
             @NotNull Persistor<GroupedMessageBatchToStore> persistor,
-            @NotNull Configuration configuration
+            @NotNull Configuration configuration,
+            @NotNull Integer prefetchCount
     ) {
         this.router = requireNonNull(router, "Message router can't be null");
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.persistor = Objects.requireNonNull(persistor, "Persistor can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
         this.metrics = new MessageProcessorMetrics();
+        this.prefetchCount = prefetchCount;
+        this.batchCounter = new AtomicInteger(0);
     }
 
     public void start() {
@@ -168,6 +175,15 @@ public class MessageProcessor implements AutoCloseable  {
                 persist(new ConsolidatedBatch(toCradleBatch(group, messages), confirmation));
             } else {
                 storeMessages(group, messages, confirmation);
+            }
+
+
+            if (prefetchCount != 0) {
+                if (batchCounter.incrementAndGet() > prefetchCount - PREFETCH_DELTA) {
+                    drainExecutor.submit(() -> {
+                        drain(true);
+                    });
+                }
             }
         } catch (Exception ex) {
             logger.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
@@ -364,6 +380,8 @@ public class MessageProcessor implements AutoCloseable  {
                 return;
             persist(data);
         });
+
+        batchCounter.set(0);
     }
 
 

@@ -146,7 +146,7 @@ public class Configuration {
         }
 
         public Builder withPrefetchRatioToDrain(double prefetchRatioToDrain) {
-            this.prefetchRatioToDrain = Math.max(prefetchRatioToDrain, 1.0);
+            this.prefetchRatioToDrain = Math.min(prefetchRatioToDrain, 1.0);
             return this;
         }
 

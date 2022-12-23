@@ -179,6 +179,7 @@ public class MessageProcessor implements AutoCloseable  {
             if (prefetchCount != 0) {
                 if (batchCounter.incrementAndGet() > prefetchCount * configuration.getPrefetchRatioToDrain()) {
                     drainExecutor.submit(() -> {
+                        logger.debug("force drain caused by prefetchCount");
                         drain(true);
                     });
                 }

@@ -55,8 +55,9 @@ public class MessageProcessor implements AutoCloseable  {
     private static final Logger logger = LoggerFactory.getLogger(MessageProcessor.class);
     private static final String[] ATTRIBUTES = {QueueAttribute.SUBSCRIBE.getValue(), QueueAttribute.RAW.getValue()};
 
+    private final Integer DRAIN_POOL_SIZE = 5;
     protected final CradleStorage cradleStorage;
-    private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService drainExecutor = Executors.newScheduledThreadPool(DRAIN_POOL_SIZE);
     private final Map<SessionKey, SessionData> sessions = new ConcurrentHashMap<>();
     private final Map<String, BatchConsolidator> batchCaches = new ConcurrentHashMap<>();
     private final Configuration configuration;

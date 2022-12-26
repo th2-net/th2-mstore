@@ -177,14 +177,14 @@ public class MessageProcessor implements AutoCloseable  {
             }
 
 
-            if (prefetchCount != 0) {
-                if (batchCounter.incrementAndGet() > prefetchCount * configuration.getPrefetchRatioToDrain()) {
-                    drainExecutor.submit(() -> {
-                        logger.debug("force drain caused by prefetchCount");
-                        drain(true);
-                    });
-                }
-            }
+//            if (prefetchCount != 0) {
+//                if (batchCounter.incrementAndGet() > prefetchCount * configuration.getPrefetchRatioToDrain()) {
+//                    drainExecutor.submit(() -> {
+//                        logger.debug("force drain caused by prefetchCount");
+//                        drain(true);
+//                    });
+//                }
+//            }
         } catch (Exception ex) {
             logger.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
             reject(confirmation);

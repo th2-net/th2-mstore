@@ -68,6 +68,7 @@ public class MessageProcessor implements AutoCloseable  {
     private final MessageProcessorMetrics metrics;
     private final Integer prefetchCount;
     private final AtomicInteger batchCounter;
+    private volatile boolean prefetchDrainSubmitted;
 
     public MessageProcessor(
             @NotNull MessageRouter<RawMessageBatch> router,
@@ -83,6 +84,7 @@ public class MessageProcessor implements AutoCloseable  {
         this.metrics = new MessageProcessorMetrics();
         this.prefetchCount = prefetchCount;
         this.batchCounter = new AtomicInteger(0);
+        this.prefetchDrainSubmitted = false;
     }
 
     public void start() {
@@ -176,18 +178,22 @@ public class MessageProcessor implements AutoCloseable  {
                 storeMessages(group, messages, confirmation);
             }
 
-
-//            if (prefetchCount != 0) {
-//                if (batchCounter.incrementAndGet() > prefetchCount * configuration.getPrefetchRatioToDrain()) {
-//                    drainExecutor.submit(() -> {
-//                        logger.debug("force drain caused by prefetchCount");
-//                        drain(true);
-//                    });
-//                }
-//            }
+            trySubmittingDrain();
         } catch (Exception ex) {
             logger.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
             reject(confirmation);
+        }
+    }
+
+    private void trySubmittingDrain () {
+        if (prefetchCount != 0 && !prefetchDrainSubmitted) {
+            if (batchCounter.incrementAndGet() > prefetchCount * configuration.getPrefetchRatioToDrain()) {
+                prefetchDrainSubmitted = true;
+                drainExecutor.submit(() -> {
+                    logger.debug("force drain caused by prefetchCount");
+                    drain(true);
+                });
+            }
         }
     }
 
@@ -382,6 +388,7 @@ public class MessageProcessor implements AutoCloseable  {
         });
 
         batchCounter.set(0);
+        prefetchDrainSubmitted = false;
     }
 
 

@@ -55,9 +55,8 @@ public class MessageProcessor implements AutoCloseable  {
     private static final Logger logger = LoggerFactory.getLogger(MessageProcessor.class);
     private static final String[] ATTRIBUTES = {QueueAttribute.SUBSCRIBE.getValue(), QueueAttribute.RAW.getValue()};
 
-    private final Integer DRAIN_POOL_SIZE = 5;
     protected final CradleStorage cradleStorage;
-    private final ScheduledExecutorService drainExecutor = Executors.newScheduledThreadPool(DRAIN_POOL_SIZE);
+    private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessions = new ConcurrentHashMap<>();
     private final Map<String, BatchConsolidator> batchCaches = new ConcurrentHashMap<>();
     private final Configuration configuration;
@@ -66,7 +65,7 @@ public class MessageProcessor implements AutoCloseable  {
     private SubscriberMonitor monitor;
     private final Persistor<GroupedMessageBatchToStore> persistor;
     private final MessageProcessorMetrics metrics;
-    private final Integer prefetchCount;
+    private final Long drainThreshold;
     private final AtomicInteger batchCounter;
     private volatile boolean prefetchDrainSubmitted;
 
@@ -82,7 +81,7 @@ public class MessageProcessor implements AutoCloseable  {
         this.persistor = Objects.requireNonNull(persistor, "Persistor can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
         this.metrics = new MessageProcessorMetrics();
-        this.prefetchCount = prefetchCount;
+        this.drainThreshold = Math.round(prefetchCount * configuration.getPrefetchRatioToDrain());
         this.batchCounter = new AtomicInteger(0);
         this.prefetchDrainSubmitted = false;
     }
@@ -186,8 +185,8 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
     private void trySubmittingDrain () {
-        if (prefetchCount != 0 && !prefetchDrainSubmitted) {
-            if (batchCounter.incrementAndGet() > prefetchCount * configuration.getPrefetchRatioToDrain()) {
+        if (drainThreshold != 0 && !prefetchDrainSubmitted) {
+            if (batchCounter.incrementAndGet() > drainThreshold) {
                 prefetchDrainSubmitted = true;
                 drainExecutor.submit(() -> {
                     logger.debug("force drain caused by prefetchCount");

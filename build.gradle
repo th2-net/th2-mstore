@@ -6,8 +6,7 @@ plugins {
 }
 
 ext {
-    sharedDir       = file("${project.rootDir}/shared")
-    cradleVersion   = '5.0.0-dev-version-5-3887043244-1a61d84-SNAPSHOT'
+    cradleVersion   = '5.0.0-TH2-4637-3891905806-a379eab-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -18,11 +17,6 @@ targetCompatibility = 11
 
 
 repositories {
-    maven {
-        name 'MavenLocal'
-        url sharedDir
-    }
-
     mavenCentral()
     
     maven {

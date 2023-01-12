@@ -6,7 +6,7 @@ plugins {
 }
 
 ext {
-    cradleVersion   = '5.0.0-TH2-4637-3891905806-a379eab-SNAPSHOT'
+    cradleVersion   = '5.0.0-TH2-4637-3901347061-ab1759f-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'

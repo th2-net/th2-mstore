@@ -87,7 +87,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
         @Override
         public void run() {
-            while (interrupted()) {
+            while (!interrupted()) {
                 try {
                     Thread.sleep(500);
                     LOGGER.info("submitted persistence tasks: {}", counter);

@@ -66,6 +66,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         this.samplerService = Executors.newSingleThreadScheduledExecutor();
         this.persistenceExecutor = Executors.newFixedThreadPool(5);
         this.counter = new TaskCounter();
+        counter.start();
     }
 
     private static class TaskCounter extends Thread {

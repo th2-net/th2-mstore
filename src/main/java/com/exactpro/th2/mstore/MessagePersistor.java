@@ -130,7 +130,6 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                             LOGGER.error("Error: ", e);
                         }
                     });
-                    processTask(task);
                 } catch (Exception e) {
                     resolveTaskError(task, e);
                 }

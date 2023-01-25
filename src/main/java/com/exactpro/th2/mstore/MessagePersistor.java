@@ -28,10 +28,8 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.util.Objects.requireNonNull;
 
@@ -47,9 +45,12 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
     private final MessagePersistorMetrics<PersistenceTask<GroupedMessageBatchToStore>> metrics;
     private final ScheduledExecutorService samplerService;
+    private final ExecutorService persistenceExecutor;
 
     private volatile boolean stopped;
     private final Object signal = new Object();
+
+    private final TaskCounter counter;
 
     public MessagePersistor(@NotNull Configuration config, @NotNull CradleStorage cradleStorage) {
         this(config, cradleStorage, (r) -> config.getRetryDelayBase() * 1_000_000 * (r + 1));
@@ -63,6 +64,37 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
         this.metrics = new MessagePersistorMetrics<>(taskQueue);
         this.samplerService = Executors.newSingleThreadScheduledExecutor();
+        this.persistenceExecutor = Executors.newFixedThreadPool(5);
+        this.counter = new TaskCounter();
+    }
+
+    private static class TaskCounter extends Thread {
+
+        private int counter;
+
+        public TaskCounter() {
+            this.counter = 0;
+        }
+
+        public synchronized void increase () {
+            counter ++;
+        }
+
+        public synchronized void decrease () {
+            counter --;
+        }
+
+        @Override
+        public void run() {
+            while (interrupted()) {
+                try {
+                    Thread.sleep(500);
+                    LOGGER.info("submitted persistence tasks: {}", counter);
+                } catch (InterruptedException e) {
+                    break;
+                }
+            }
+        }
     }
 
     public void start() throws InterruptedException {
@@ -91,6 +123,13 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
             try {
                 ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task = taskQueue.awaitScheduled();
                 try {
+                    persistenceExecutor.submit(() -> {
+                        try {
+                            processTask(task);
+                        } catch (Exception e) {
+                            LOGGER.error("Error: ", e);
+                        }
+                    });
                     processTask(task);
                 } catch (Exception e) {
                     resolveTaskError(task, e);
@@ -107,10 +146,12 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         final GroupedMessageBatchToStore batch = task.getPayload().data;
         final Histogram.Timer timer = metrics.startMeasuringPersistenceLatency();
 
+        counter.increase();
         CompletableFuture<Void> result = cradleStorage.storeGroupedMessageBatchAsync(batch)
                 .thenRun(() -> LOGGER.debug("Stored batch with group '{}'", batch.getGroup()))
                 .whenCompleteAsync((unused, ex) ->
                         {
+                            counter.decrease();
                             timer.observeDuration();
                             if (ex != null) {
                                 resolveTaskError(task, ex);

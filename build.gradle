@@ -56,10 +56,11 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:3.0.0')
+    api platform('com.exactpro.th2:bom:4.1.0')
 
+    implementation 'com.exactpro.th2:common:3.44.0'
     implementation 'com.exactpro.th2:task-utils:0.1.1'
-    implementation 'com.exactpro.th2:common:3.39.3'
+
     implementation 'com.google.protobuf:protobuf-java-util'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.4'
     implementation 'io.prometheus:simpleclient:0.9.0'

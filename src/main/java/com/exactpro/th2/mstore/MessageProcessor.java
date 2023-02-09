@@ -26,9 +26,11 @@ import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
-import com.exactpro.th2.common.message.SessionKey;
-import com.exactpro.th2.common.schema.message.*;
+import com.exactpro.th2.common.schema.message.DeliveryMetadata;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
+import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.QueueAttribute;
+import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import io.prometheus.client.Histogram;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
@@ -65,18 +67,22 @@ public class MessageProcessor implements AutoCloseable  {
     private SubscriberMonitor monitor;
     private final Persistor<GroupedMessageBatchToStore> persistor;
     private final MessageProcessorMetrics metrics;
+    private final ManualDrainTrigger manualDrain;
 
     public MessageProcessor(
             @NotNull MessageRouter<RawMessageBatch> router,
             @NotNull CradleStorage cradleStorage,
             @NotNull Persistor<GroupedMessageBatchToStore> persistor,
-            @NotNull Configuration configuration
+            @NotNull Configuration configuration,
+            @NotNull Integer prefetchCount
     ) {
         this.router = requireNonNull(router, "Message router can't be null");
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.persistor = Objects.requireNonNull(persistor, "Persistor can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
         this.metrics = new MessageProcessorMetrics();
+
+        this.manualDrain = new ManualDrainTrigger(drainExecutor, (int) Math.round(prefetchCount * configuration.getPrefetchRatioToDrain()));
     }
 
     public void start() {
@@ -90,7 +96,7 @@ public class MessageProcessor implements AutoCloseable  {
                 throw new RuntimeException("Can not find queues for subscriber");
             }
         }
-        drainFuture = drainExecutor.scheduleAtFixedRate(this::drainByScheduler,
+        drainFuture = drainExecutor.scheduleAtFixedRate(this::scheduledDrain,
                                                         configuration.getDrainInterval(),
                                                         configuration.getDrainInterval(),
                                                         TimeUnit.MILLISECONDS);
@@ -220,12 +226,20 @@ public class MessageProcessor implements AutoCloseable  {
         ConsolidatedBatch consolidatedBatch;
         synchronized (consolidator) {
             if (consolidator.add(batch, confirmation)) {
+                manualDrain.registerMessage();
                 if (logger.isDebugEnabled()) {
                     logger.debug("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
                 }
+
+                manualDrain.runConditionally(this::manualDrain);
                 return;
             }
+
             consolidatedBatch = consolidator.resetAndUpdate(batch, confirmation);
+
+            manualDrain.unregisterMessages(consolidatedBatch.confirmations.size());
+            manualDrain.registerMessage();
+            manualDrain.runConditionally(this::manualDrain);
         }
 
         if (consolidatedBatch.batch.isEmpty())
@@ -345,10 +359,17 @@ public class MessageProcessor implements AutoCloseable  {
         return new MessageOrderingProperties(lastMessageSequence, toTimestamp(lastMessageTimestamp));
     }
 
-    private void drainByScheduler() {
+    private void scheduledDrain() {
         logger.debug("Starting scheduled cache drain");
         drain(false);
         logger.debug("Scheduled cache drain ended");
+    }
+
+    private void manualDrain() {
+        logger.debug("Starting manual cache drain");
+        drain(true);
+        manualDrain.completeDraining();
+        logger.debug("Manual cache drain ended");
     }
 
     private void drain(boolean force) {
@@ -360,6 +381,7 @@ public class MessageProcessor implements AutoCloseable  {
                     return;
                 data = consolidator.reset();
             }
+            manualDrain.unregisterMessages(data.confirmations.size());
             if (data.batch.isEmpty())
                 return;
             persist(data);

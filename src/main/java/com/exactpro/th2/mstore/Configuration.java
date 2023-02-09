@@ -28,6 +28,7 @@ public class Configuration {
     private long  maxTaskDataSize;
     private int   maxRetryCount;
     private long  retryDelayBase;
+    private double prefetchRatioToDrain;
 
     private Configuration() {
     }
@@ -62,6 +63,10 @@ public class Configuration {
         return retryDelayBase;
     }
 
+    public double getPrefetchRatioToDrain() {
+        return prefetchRatioToDrain;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -73,6 +78,7 @@ public class Configuration {
         private static final int DEFAULT_MAX_TASK_RETRIES = 1000000;
         private static final int DEFAULT_MAX_TASK_COUNT = 256;
         private static final long DEFAULT_RETRY_DELAY_BASEM_MS = 5000;
+        private static final double DEFAULT_PREFETCH_RATIO_TO_DRAIN = 0.9;
 
         @JsonProperty("drain-interval")
         @JsonPropertyDescription("Interval in milliseconds to drain all aggregated batches that are not stored yet")
@@ -94,6 +100,10 @@ public class Configuration {
         @JsonProperty("retryDelayBase")
         private Long retryDelayBase;
 
+        @JsonProperty("prefetchRatioToDrain")
+        @JsonPropertyDescription("Ratio of prefetch when force drain should be called")
+        private double prefetchRatioToDrain;
+
         private Builder() {
             drainInterval = DEFAULT_DRAIN_INTERVAL;
             terminationTimeout = DEFAULT_WAIT_TIMEOUT;
@@ -101,6 +111,7 @@ public class Configuration {
             maxTaskCount = DEFAULT_MAX_TASK_COUNT;
             maxRetryCount = DEFAULT_MAX_TASK_RETRIES;
             retryDelayBase = DEFAULT_RETRY_DELAY_BASEM_MS;
+            prefetchRatioToDrain = DEFAULT_PREFETCH_RATIO_TO_DRAIN;
         }
 
 
@@ -134,6 +145,11 @@ public class Configuration {
             return this;
         }
 
+        public Builder withPrefetchRatioToDrain(double prefetchRatioToDrain) {
+            this.prefetchRatioToDrain = Math.min(prefetchRatioToDrain, 1.0);
+            return this;
+        }
+
         public Configuration build() {
             Configuration configuration = new Configuration();
             configuration.drainInterval = drainInterval;
@@ -142,6 +158,7 @@ public class Configuration {
             configuration.maxTaskDataSize = this.maxTaskDataSize;
             configuration.retryDelayBase = this.retryDelayBase;
             configuration.maxTaskCount = this.maxTaskCount;
+            configuration.prefetchRatioToDrain = this.prefetchRatioToDrain;
             return configuration;
         }
     }

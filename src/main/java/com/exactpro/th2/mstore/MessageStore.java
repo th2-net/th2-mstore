@@ -59,7 +59,8 @@ public class MessageStore {
             MessageProcessor processor = new MessageProcessor(factory.getMessageRouterRawBatch(),
                                                                 storage,
                                                                 persistor,
-                                                                config);
+                                                                config,
+                                                                factory.getConnectionManagerConfiguration().getPrefetchCount());
             shutdownManager.registerResource(processor);
 
             persistor.start();

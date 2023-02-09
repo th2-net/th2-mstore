@@ -481,37 +481,4 @@ public class MessageProcessor implements AutoCloseable  {
             return lastOrderingProperties.get();
         }
     }
-
-    private static class ManualDrainTrigger {
-        private final ExecutorService executor;
-        private final int threshold;
-        private volatile long counter;
-        private volatile boolean drainTriggered;
-
-        ManualDrainTrigger(ExecutorService executor, int threshold) {
-            this.executor = executor;
-            this.threshold = threshold;
-        }
-
-        synchronized void registerMessage() {
-            counter++;
-        }
-
-        synchronized void unregisterMessages(int count) {
-            counter -= count;
-        }
-
-        synchronized void completeDraining() {
-            drainTriggered = false;
-        }
-
-        synchronized void runConditionally(Runnable drainer) {
-            if (threshold > 0) {
-                if (!drainTriggered && (counter > threshold)) {
-                    drainTriggered = true;
-                    executor.submit(drainer);
-                }
-            }
-        }
-    }
 }

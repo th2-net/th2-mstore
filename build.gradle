@@ -7,8 +7,7 @@ plugins {
 
 ext {
     sharedDir       = file("${project.rootDir}/shared")
-    cradleVersion   = '5.0.0-TH2-4637_serial_logs-3930969840-26d8fd4-SNAPSHOT'
-    commonVersion   = '5.0.0-TH2-4579-3937318082-SNAPSHOT'
+    cradleVersion   = '5.0.0-dev-version-5-3900325557-667e703-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -57,9 +56,9 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:3.0.0')
+    api platform('com.exactpro.th2:bom:4.1.0')
 
-    implementation "com.exactpro.th2:common:$commonVersion"
+    implementation 'com.exactpro.th2:common:5.1.0-dev-version-5-4085018593-8adee33-SNAPSHOT'
     implementation 'com.exactpro.th2:task-utils:0.1.1'
     implementation 'com.google.protobuf:protobuf-java-util'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.4'

@@ -406,7 +406,7 @@ class TestMessageProcessor {
             Persistor<GroupedMessageBatchToStore> persistor,
             Configuration configuration
     ) {
-        return new MessageProcessor(routerMock, cradleStorageMock, persistor, configuration);
+        return new MessageProcessor(routerMock, cradleStorageMock, persistor, configuration, 0);
     }
 
     private RawMessage createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, String bookName) {

@@ -96,11 +96,14 @@ public class MessageProcessor implements AutoCloseable  {
                 throw new RuntimeException("Can not find queues for subscriber");
             }
         }
-        drainFuture = drainExecutor.scheduleAtFixedRate(this::scheduledDrain,
-                                                        configuration.getDrainInterval(),
-                                                        configuration.getDrainInterval(),
-                                                        TimeUnit.MILLISECONDS);
-        logger.info("Drain scheduler is started");
+
+        if (configuration.isRebatching()) {
+            drainFuture = drainExecutor.scheduleAtFixedRate(this::scheduledDrain,
+                                                            configuration.getDrainInterval(),
+                                                            configuration.getDrainInterval(),
+                                                            TimeUnit.MILLISECONDS);
+            logger.info("Drain scheduler is started");
+        }
     }
 
 
@@ -220,26 +223,31 @@ public class MessageProcessor implements AutoCloseable  {
         logger.debug("Process {} messages started", messagesList.size());
 
         GroupedMessageBatchToStore batch = toCradleBatch(group, messagesList);
-        BatchConsolidator consolidator = batchCaches.computeIfAbsent(group,
-                k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(group)));
 
         ConsolidatedBatch consolidatedBatch;
-        synchronized (consolidator) {
-            if (consolidator.add(batch, confirmation)) {
-                manualDrain.registerMessage();
-                if (logger.isTraceEnabled()) {
-                    logger.trace("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
+        if (configuration.isRebatching()) {
+            BatchConsolidator consolidator = batchCaches.computeIfAbsent(group,
+                    k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(group)));
+
+            synchronized (consolidator) {
+                if (consolidator.add(batch, confirmation)) {
+                    manualDrain.registerMessage();
+                    if (logger.isTraceEnabled()) {
+                        logger.trace("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
+                    }
+
+                    manualDrain.runConditionally(this::manualDrain);
+                    return;
                 }
 
+                consolidatedBatch = consolidator.resetAndUpdate(batch, confirmation);
+
+                manualDrain.unregisterMessages(consolidatedBatch.confirmations.size());
+                manualDrain.registerMessage();
                 manualDrain.runConditionally(this::manualDrain);
-                return;
             }
-
-            consolidatedBatch = consolidator.resetAndUpdate(batch, confirmation);
-
-            manualDrain.unregisterMessages(consolidatedBatch.confirmations.size());
-            manualDrain.registerMessage();
-            manualDrain.runConditionally(this::manualDrain);
+        } else {
+            consolidatedBatch = new ConsolidatedBatch(batch, confirmation);
         }
 
         if (consolidatedBatch.batch.isEmpty())

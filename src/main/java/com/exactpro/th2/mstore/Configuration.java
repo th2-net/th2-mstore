@@ -29,6 +29,7 @@ public class Configuration {
     private int   maxRetryCount;
     private long  retryDelayBase;
     private double prefetchRatioToDrain;
+    private boolean rebatching;
 
     private Configuration() {
     }
@@ -67,12 +68,17 @@ public class Configuration {
         return prefetchRatioToDrain;
     }
 
+    public boolean isRebatching() {
+        return rebatching;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
 
     @JsonPOJOBuilder
     public static final class Builder {
+        private static final boolean DEFAULT_REBATCHING = true;
         private static final long DEFAULT_DRAIN_INTERVAL = 1000L;
         private static final long DEFAULT_WAIT_TIMEOUT = 5000L;
         private static final int DEFAULT_MAX_TASK_RETRIES = 1000000;
@@ -100,6 +106,9 @@ public class Configuration {
         @JsonProperty("retryDelayBase")
         private Long retryDelayBase;
 
+        @JsonProperty("rebatching")
+        private Boolean rebatching;
+
         @JsonProperty("prefetchRatioToDrain")
         @JsonPropertyDescription("Ratio of prefetch when force drain should be called")
         private double prefetchRatioToDrain;
@@ -112,6 +121,7 @@ public class Configuration {
             maxRetryCount = DEFAULT_MAX_TASK_RETRIES;
             retryDelayBase = DEFAULT_RETRY_DELAY_BASEM_MS;
             prefetchRatioToDrain = DEFAULT_PREFETCH_RATIO_TO_DRAIN;
+            rebatching = DEFAULT_REBATCHING;
         }
 
 
@@ -150,6 +160,11 @@ public class Configuration {
             return this;
         }
 
+        public Builder withRebatching(boolean rebatching) {
+            this.rebatching = rebatching;
+            return this;
+        }
+
         public Configuration build() {
             Configuration configuration = new Configuration();
             configuration.drainInterval = drainInterval;
@@ -159,6 +174,7 @@ public class Configuration {
             configuration.retryDelayBase = this.retryDelayBase;
             configuration.maxTaskCount = this.maxTaskCount;
             configuration.prefetchRatioToDrain = this.prefetchRatioToDrain;
+            configuration.rebatching = this.rebatching;
             return configuration;
         }
     }

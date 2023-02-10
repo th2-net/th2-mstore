@@ -227,8 +227,8 @@ public class MessageProcessor implements AutoCloseable  {
         synchronized (consolidator) {
             if (consolidator.add(batch, confirmation)) {
                 manualDrain.registerMessage();
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
+                if (logger.isTraceEnabled()) {
+                    logger.trace("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
                 }
 
                 manualDrain.runConditionally(this::manualDrain);

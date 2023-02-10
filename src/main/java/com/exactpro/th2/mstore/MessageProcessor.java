@@ -97,6 +97,7 @@ public class MessageProcessor implements AutoCloseable  {
             }
         }
 
+        logger.info("Rebatching is {}", (configuration.isRebatching() ? "on" : "off"));
         if (configuration.isRebatching()) {
             drainFuture = drainExecutor.scheduleAtFixedRate(this::scheduledDrain,
                                                             configuration.getDrainInterval(),

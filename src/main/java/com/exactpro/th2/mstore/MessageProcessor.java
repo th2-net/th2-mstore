@@ -360,16 +360,16 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
     private void scheduledDrain() {
-        logger.debug("Starting scheduled cache drain");
+        logger.trace("Starting scheduled cache drain");
         drain(false);
-        logger.debug("Scheduled cache drain ended");
+        logger.trace("Scheduled cache drain ended");
     }
 
     private void manualDrain() {
-        logger.debug("Starting manual cache drain");
+        logger.trace("Starting manual cache drain");
         drain(true);
         manualDrain.completeDraining();
-        logger.debug("Manual cache drain ended");
+        logger.trace("Manual cache drain ended");
     }
 
     private void drain(boolean force) {

@@ -37,10 +37,13 @@ public class BatchConsolidator {
     }
 
     public boolean add(GroupedMessageBatchToStore batch, Confirmation confirmation) throws CradleStorageException {
-        if (!data.batch.addBatch(batch))
+        if (data.confirmations.size() > 0)
             return false;
-        data.confirmations.add(confirmation);
-        return true;
+        return false;
+//        if (!data.batch.addBatch(batch))
+//            return false;
+//        data.confirmations.add(confirmation);
+//        return true;
     }
 
     public long ageInMillis() {

@@ -37,9 +37,6 @@ public class BatchConsolidator {
     }
 
     public boolean add(GroupedMessageBatchToStore batch, Confirmation confirmation) throws CradleStorageException {
-        if (data.confirmations.size() > 0)
-            return false;
-
         if (!data.batch.addBatch(batch))
             return false;
         data.confirmations.add(confirmation);

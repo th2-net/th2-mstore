@@ -228,7 +228,7 @@ public class MessageProcessor implements AutoCloseable  {
         ConsolidatedBatch consolidatedBatch;
         if (configuration.isRebatching()) {
             BatchConsolidator consolidator = batchCaches.computeIfAbsent(group,
-                    k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(group)));
+                    k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(group), configuration.getMaxBatchSize()));
 
             synchronized (consolidator) {
                 if (consolidator.add(batch, confirmation)) {

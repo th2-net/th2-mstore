@@ -221,7 +221,7 @@ public class MessageProcessor implements AutoCloseable  {
 
 
     private void storeMessages(String group, List<RawMessage> messagesList, Confirmation confirmation) throws Exception {
-        logger.debug("Process {} messages started", messagesList.size());
+        logger.trace("Process {} messages started", messagesList.size());
 
         GroupedMessageBatchToStore batch = toCradleBatch(group, messagesList);
 

@@ -27,16 +27,21 @@ import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirma
 public class BatchConsolidator {
 
     private final Supplier<GroupedMessageBatchToStore> batchSupplier;
+    private final int maxBatchSize;
 
     private volatile long lastReset = System.nanoTime();
     private volatile ConsolidatedBatch data;
 
-    public BatchConsolidator(Supplier<GroupedMessageBatchToStore> batchSupplier) {
+    public BatchConsolidator(Supplier<GroupedMessageBatchToStore> batchSupplier, int maxBatchSize) {
         this.batchSupplier = Objects.requireNonNull(batchSupplier, "'Batch supplier' parameter");
         this.data = new ConsolidatedBatch(batchSupplier.get(), null);
+        this.maxBatchSize = maxBatchSize;
     }
 
     public boolean add(GroupedMessageBatchToStore batch, Confirmation confirmation) throws CradleStorageException {
+        if (data.batch.getMessageCount() > 0 && (data.batch.getBatchSize() + batch.getBatchSize() > maxBatchSize)) {
+            return false;
+        }
         if (!data.batch.addBatch(batch))
             return false;
         data.confirmations.add(confirmation);

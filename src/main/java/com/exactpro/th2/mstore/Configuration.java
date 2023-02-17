@@ -29,6 +29,8 @@ public class Configuration {
     private int   maxRetryCount;
     private long  retryDelayBase;
     private double prefetchRatioToDrain;
+    private boolean rebatching;
+    private int  maxBatchSize;
 
     private Configuration() {
     }
@@ -67,12 +69,22 @@ public class Configuration {
         return prefetchRatioToDrain;
     }
 
+    public boolean isRebatching() {
+        return rebatching;
+    }
+
+    public int getMaxBatchSize() {
+        return maxBatchSize;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
 
     @JsonPOJOBuilder
     public static final class Builder {
+        private static final boolean DEFAULT_REBATCHING = true;
+        private static final int DEFAULT_MAX_BATCH_SIZE = 128_000;
         private static final long DEFAULT_DRAIN_INTERVAL = 1000L;
         private static final long DEFAULT_WAIT_TIMEOUT = 5000L;
         private static final int DEFAULT_MAX_TASK_RETRIES = 1000000;
@@ -100,9 +112,15 @@ public class Configuration {
         @JsonProperty("retryDelayBase")
         private Long retryDelayBase;
 
+        @JsonProperty("rebatching")
+        private Boolean rebatching;
+
         @JsonProperty("prefetchRatioToDrain")
         @JsonPropertyDescription("Ratio of prefetch when force drain should be called")
         private double prefetchRatioToDrain;
+
+        @JsonProperty("maxBatchSize")
+        private int  maxBatchSize;
 
         private Builder() {
             drainInterval = DEFAULT_DRAIN_INTERVAL;
@@ -112,6 +130,8 @@ public class Configuration {
             maxRetryCount = DEFAULT_MAX_TASK_RETRIES;
             retryDelayBase = DEFAULT_RETRY_DELAY_BASEM_MS;
             prefetchRatioToDrain = DEFAULT_PREFETCH_RATIO_TO_DRAIN;
+            rebatching = DEFAULT_REBATCHING;
+            maxBatchSize = DEFAULT_MAX_BATCH_SIZE;
         }
 
 
@@ -145,8 +165,18 @@ public class Configuration {
             return this;
         }
 
+        public Builder withMaxBatchSize(Integer maxBatchSize) {
+            this.maxBatchSize = maxBatchSize;
+            return this;
+        }
+
         public Builder withPrefetchRatioToDrain(double prefetchRatioToDrain) {
             this.prefetchRatioToDrain = Math.min(prefetchRatioToDrain, 1.0);
+            return this;
+        }
+
+        public Builder withRebatching(boolean rebatching) {
+            this.rebatching = rebatching;
             return this;
         }
 
@@ -159,6 +189,8 @@ public class Configuration {
             configuration.retryDelayBase = this.retryDelayBase;
             configuration.maxTaskCount = this.maxTaskCount;
             configuration.prefetchRatioToDrain = this.prefetchRatioToDrain;
+            configuration.rebatching = this.rebatching;
+            configuration.maxBatchSize = maxBatchSize;
             return configuration;
         }
     }

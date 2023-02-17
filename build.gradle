@@ -6,8 +6,7 @@ plugins {
 }
 
 ext {
-    sharedDir       = file("${project.rootDir}/shared")
-    cradleVersion   = '5.0.0-dev-version-5-3900325557-667e703-SNAPSHOT'
+    cradleVersion   = '5.0.0-dev-version-5-4183204552-63e7c7b-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -18,11 +17,6 @@ targetCompatibility = 11
 
 
 repositories {
-    maven {
-        name 'MavenLocal'
-        url sharedDir
-    }
-
     mavenCentral()
     
     maven {
@@ -58,7 +52,7 @@ jar {
 dependencies {
     api platform('com.exactpro.th2:bom:4.1.0')
 
-    implementation 'com.exactpro.th2:common:5.1.0-dev-version-5-4085018593-8adee33-SNAPSHOT'
+    implementation 'com.exactpro.th2:common:5.1.0-dev-version-5-4201556161-176471c-SNAPSHOT'
     implementation 'com.exactpro.th2:task-utils:0.1.1'
     implementation 'com.google.protobuf:protobuf-java-util'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.4'

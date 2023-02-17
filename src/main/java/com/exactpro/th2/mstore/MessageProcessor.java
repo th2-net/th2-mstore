@@ -151,7 +151,7 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
 
-    void process(DeliveryMetadata deliveryMetadata, RawMessageBatch messageBatch, Confirmation confirmation) {
+    public void process(DeliveryMetadata deliveryMetadata, RawMessageBatch messageBatch, Confirmation confirmation) {
         try {
             List<RawMessage> messages = messageBatch.getMessagesList();
             if (messages.isEmpty()) {

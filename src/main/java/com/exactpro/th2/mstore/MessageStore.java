@@ -63,8 +63,20 @@ public class MessageStore {
                                                                 factory.getConnectionManagerConfiguration().getPrefetchCount());
             shutdownManager.registerResource(processor);
 
+
+            BatchGenerator batchGenerator = new BatchGenerator(storage,
+                                                                persistor,
+                                                                config);
+            shutdownManager.registerResource(batchGenerator);
+
+
+            MessageGenerator messageGenerator = new MessageGenerator(storage, processor, config);
+            shutdownManager.registerResource(messageGenerator);
+
             persistor.start();
             processor.start();
+//            batchGenerator.start();
+            messageGenerator.start();
 
             READINESS_MONITOR.enable();
             LOGGER.info("mstore started");

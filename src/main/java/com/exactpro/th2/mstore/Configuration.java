@@ -32,6 +32,10 @@ public class Configuration {
     private boolean rebatching;
     private int  maxBatchSize;
 
+    private int messageSize;
+    private int batchSize;
+    private int batches;
+
     private Configuration() {
     }
 
@@ -73,9 +77,22 @@ public class Configuration {
         return rebatching;
     }
 
+    public int getMessageSize() {
+        return messageSize;
+    }
+
+    public int getBatchSize() {
+        return batchSize;
+    }
+
+    public int getBatches() {
+        return batches;
+    }
+
     public int getMaxBatchSize() {
         return maxBatchSize;
     }
+
 
     public static Builder builder() {
         return new Builder();
@@ -91,6 +108,11 @@ public class Configuration {
         private static final int DEFAULT_MAX_TASK_COUNT = 256;
         private static final long DEFAULT_RETRY_DELAY_BASEM_MS = 5000;
         private static final double DEFAULT_PREFETCH_RATIO_TO_DRAIN = 0.9;
+
+        private static final int DEFAULT_MESSAGE_SIZE = 256;
+        private static final int DEFAULT_BATCH_SIZE = 256;
+        private static final int DEFAULT_BATCHES = 10_000;
+
 
         @JsonProperty("drain-interval")
         @JsonPropertyDescription("Interval in milliseconds to drain all aggregated batches that are not stored yet")
@@ -119,8 +141,18 @@ public class Configuration {
         @JsonPropertyDescription("Ratio of prefetch when force drain should be called")
         private double prefetchRatioToDrain;
 
+        @JsonProperty("messageSize")
+        private int messageSize;
+
+        @JsonProperty("batchSize")
+        private int batchSize;
+
+        @JsonProperty("batches")
+        private int batches;
+
         @JsonProperty("maxBatchSize")
         private int  maxBatchSize;
+
 
         private Builder() {
             drainInterval = DEFAULT_DRAIN_INTERVAL;
@@ -131,6 +163,10 @@ public class Configuration {
             retryDelayBase = DEFAULT_RETRY_DELAY_BASEM_MS;
             prefetchRatioToDrain = DEFAULT_PREFETCH_RATIO_TO_DRAIN;
             rebatching = DEFAULT_REBATCHING;
+
+            messageSize = DEFAULT_MESSAGE_SIZE;
+            batchSize = DEFAULT_BATCH_SIZE;
+            batches = DEFAULT_BATCHES;
             maxBatchSize = DEFAULT_MAX_BATCH_SIZE;
         }
 
@@ -180,6 +216,18 @@ public class Configuration {
             return this;
         }
 
+        public void withMessageSize(int messageSize) {
+            this.messageSize = messageSize;
+        }
+
+        public void withBatchSize(int batchSize) {
+            this.batchSize = batchSize;
+        }
+
+        public void withBatches(int batches) {
+            this.batches = batches;
+        }
+
         public Configuration build() {
             Configuration configuration = new Configuration();
             configuration.drainInterval = drainInterval;
@@ -190,6 +238,11 @@ public class Configuration {
             configuration.maxTaskCount = this.maxTaskCount;
             configuration.prefetchRatioToDrain = this.prefetchRatioToDrain;
             configuration.rebatching = this.rebatching;
+
+            configuration.messageSize = this.messageSize;
+            configuration.batchSize = this.batchSize;
+            configuration.batches = this.batches;
+
             configuration.maxBatchSize = maxBatchSize;
             return configuration;
         }

@@ -50,7 +50,7 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:3.0.0')
+    api platform('com.exactpro.th2:bom:4.1.0')
 
     implementation 'com.exactpro.th2:common:5.1.0-dev-version-5-4201556161-176471c-SNAPSHOT'
     implementation 'com.exactpro.th2:task-utils:0.1.1'

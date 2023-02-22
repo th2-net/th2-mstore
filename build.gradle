@@ -3,6 +3,7 @@ plugins {
     id 'java-library'
     id 'application'
     id 'com.palantir.docker' version '0.25.0'
+    id "org.owasp.dependencycheck" version "8.1.0"
 }
 
 ext {
@@ -55,10 +56,16 @@ jar {
     }
 }
 
-dependencies {
-    api platform('com.exactpro.th2:bom:4.1.0')
+configurations {
+    compileClasspath {
+        resolutionStrategy.activateDependencyLocking()
+    }
+}
 
-    implementation 'com.exactpro.th2:common:3.44.0'
+dependencies {
+    api platform('com.exactpro.th2:bom:4.2.0')
+
+    implementation 'com.exactpro.th2:common:3.44.1'
     implementation 'com.exactpro.th2:task-utils:0.1.1'
 
     implementation 'com.google.protobuf:protobuf-java-util'
@@ -105,4 +112,15 @@ dockerPrepare {
 
 docker {
     copySpec.from(tarTree("$buildDir/distributions/${applicationName}.tar"))
+}
+
+dependencyCheck {
+    formats=['SARIF', 'JSON', 'HTML']
+    failBuildOnCVSS=5
+
+    analyzers {
+        assemblyEnabled = false
+        nugetconfEnabled = false
+        nodeEnabled = false
+    }
 }

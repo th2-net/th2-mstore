@@ -219,7 +219,7 @@ public class MessageProcessor implements AutoCloseable  {
             }
             return batch;
         } catch (CradleStorageException e) {
-            invalidateCacheForGroupedBatch(batch);
+            invalidateCacheForRawMessages(messagesList);
             throw e;
         }
 
@@ -418,7 +418,6 @@ public class MessageProcessor implements AutoCloseable  {
                 public void onFail(GroupedMessageBatchToStore batch) {
                     data.confirmations.forEach(MessageProcessor::reject);
                     invalidateCacheForGroupedBatch(batch);
-
                 }
             });
         } catch (Exception e) {
@@ -431,14 +430,22 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
     private void invalidateCacheForGroupedBatch (GroupedMessageBatchToStore batch) {
-        for (StoredMessage message : batch.getMessages()) {
-            // Remove invalid cached keys
+        // Remove invalid cached keys
 
+        for (StoredMessage message : batch.getMessages()) {
             sessions.remove(new SessionKey(
                     message.getBookId().getName(),
                     message.getSessionAlias(),
                     batch.getGroup(),
                     message.getDirection()));
+        }
+    }
+
+    private void invalidateCacheForRawMessages(List<RawMessage> messages) {
+        // Remove invalid cached keys
+
+        for (RawMessage message : messages) {
+            sessions.remove(new SessionKey(message.getMetadata().getId()));
         }
     }
 

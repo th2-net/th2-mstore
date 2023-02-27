@@ -212,11 +212,17 @@ public class MessageProcessor implements AutoCloseable  {
 
     private GroupedMessageBatchToStore toCradleBatch(String group, List<RawMessage> messagesList) throws CradleStorageException {
         GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(group);
-        for (RawMessage message : messagesList) {
-            MessageToStore messageToStore = ProtoUtil.toCradleMessage(message);
-            batch.addMessage(messageToStore);
+        try {
+            for (RawMessage message : messagesList) {
+                MessageToStore messageToStore = ProtoUtil.toCradleMessage(message);
+                batch.addMessage(messageToStore);
+            }
+            return batch;
+        } catch (CradleStorageException e) {
+            invalidateCacheForGroupedBatch(batch);
+            throw e;
         }
-        return batch;
+
     }
 
 
@@ -411,16 +417,8 @@ public class MessageProcessor implements AutoCloseable  {
                 @Override
                 public void onFail(GroupedMessageBatchToStore batch) {
                     data.confirmations.forEach(MessageProcessor::reject);
+                    invalidateCacheForGroupedBatch(batch);
 
-                    for (StoredMessage message : batch.getMessages()) {
-                        // Remove invalid cached keys
-
-                        sessions.remove(new SessionKey(
-                                message.getBookId().getName(),
-                                message.getSessionAlias(),
-                                batch.getGroup(),
-                                message.getDirection()));
-                    }
                 }
             });
         } catch (Exception e) {
@@ -429,6 +427,18 @@ public class MessageProcessor implements AutoCloseable  {
             data.confirmations.forEach(MessageProcessor::reject);
         } finally {
             timer.observeDuration();
+        }
+    }
+
+    private void invalidateCacheForGroupedBatch (GroupedMessageBatchToStore batch) {
+        for (StoredMessage message : batch.getMessages()) {
+            // Remove invalid cached keys
+
+            sessions.remove(new SessionKey(
+                    message.getBookId().getName(),
+                    message.getSessionAlias(),
+                    batch.getGroup(),
+                    message.getDirection()));
         }
     }
 

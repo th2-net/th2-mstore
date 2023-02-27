@@ -6,7 +6,8 @@ plugins {
 }
 
 ext {
-    cradleVersion   = '5.0.0-dev-version-5-4183204552-63e7c7b-SNAPSHOT'
+    cradleVersion   = '5.0.0-dev-version-5-4252457586-c1a33ab-SNAPSHOT'
+    commonVersion   = '5.1.0-dev-version-5-4085018593-8adee33-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -52,7 +53,7 @@ jar {
 dependencies {
     api platform('com.exactpro.th2:bom:4.1.0')
 
-    implementation 'com.exactpro.th2:common:5.1.0-dev-version-5-4201556161-176471c-SNAPSHOT'
+    implementation "com.exactpro.th2:common:$commonVersion"
     implementation 'com.exactpro.th2:task-utils:0.1.1'
     implementation 'com.google.protobuf:protobuf-java-util'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.4'

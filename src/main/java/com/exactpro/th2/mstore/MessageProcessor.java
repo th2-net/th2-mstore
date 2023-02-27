@@ -411,6 +411,16 @@ public class MessageProcessor implements AutoCloseable  {
                 @Override
                 public void onFail(GroupedMessageBatchToStore batch) {
                     data.confirmations.forEach(MessageProcessor::reject);
+
+                    for (StoredMessage message : batch.getMessages()) {
+                        // Remove invalid cached keys
+
+                        sessions.remove(new SessionKey(
+                                message.getBookId().getName(),
+                                message.getSessionAlias(),
+                                batch.getGroup(),
+                                message.getDirection()));
+                    }
                 }
             });
         } catch (Exception e) {
@@ -444,6 +454,13 @@ public class MessageProcessor implements AutoCloseable  {
 
             String group = messageID.getConnectionId().getSessionGroup();
             this.sessionGroup = (group == null || group.isEmpty()) ? this.sessionAlias : group;
+        }
+
+        public SessionKey (String bookName, String sessionAlias, String sessionGroup, Direction direction) {
+            this.bookName = bookName;
+            this.sessionAlias = sessionAlias;
+            this.sessionGroup = sessionGroup;
+            this.direction = direction;
         }
 
         @Override

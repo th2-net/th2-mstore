@@ -164,10 +164,11 @@ public class MessageProcessor implements AutoCloseable  {
             if (!deliveryMetadata.isRedelivered())
                 verifyBatch(messages);
 
-            String group = null;
+            String group = createSessionKey(messages.get(0)).sessionGroup;
+            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(group, messages);
+
             for (RawMessage message: messages) {
                 SessionKey sessionKey = createSessionKey(message);
-                group = sessionKey.sessionGroup;
                 MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message);
                 SessionData sessionData = sessions.computeIfAbsent(sessionKey, k -> new SessionData());
 
@@ -175,9 +176,9 @@ public class MessageProcessor implements AutoCloseable  {
             }
 
             if (deliveryMetadata.isRedelivered()) {
-                persist(new ConsolidatedBatch(toCradleBatch(group, messages), confirmation));
+                persist(new ConsolidatedBatch(groupedMessageBatchToStore, confirmation));
             } else {
-                storeMessages(group, messages, confirmation);
+                storeMessages(groupedMessageBatchToStore, confirmation);
             }
         } catch (Exception ex) {
             logger.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
@@ -212,29 +213,21 @@ public class MessageProcessor implements AutoCloseable  {
 
     private GroupedMessageBatchToStore toCradleBatch(String group, List<RawMessage> messagesList) throws CradleStorageException {
         GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(group);
-        try {
-            for (RawMessage message : messagesList) {
-                MessageToStore messageToStore = ProtoUtil.toCradleMessage(message);
-                batch.addMessage(messageToStore);
-            }
-            return batch;
-        } catch (CradleStorageException e) {
-            invalidateCacheForRawMessages(messagesList);
-            throw e;
+        for (RawMessage message : messagesList) {
+            MessageToStore messageToStore = ProtoUtil.toCradleMessage(message);
+            batch.addMessage(messageToStore);
         }
-
+        return batch;
     }
 
 
-    private void storeMessages(String group, List<RawMessage> messagesList, Confirmation confirmation) throws Exception {
-        logger.trace("Process {} messages started", messagesList.size());
-
-        GroupedMessageBatchToStore batch = toCradleBatch(group, messagesList);
+    private void storeMessages(GroupedMessageBatchToStore batch, Confirmation confirmation) throws Exception {
+        logger.trace("Process {} messages started", batch.getMessageCount());
 
         ConsolidatedBatch consolidatedBatch;
         if (configuration.isRebatching()) {
-            BatchConsolidator consolidator = batchCaches.computeIfAbsent(group,
-                    k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(group), configuration.getMaxBatchSize()));
+            BatchConsolidator consolidator = batchCaches.computeIfAbsent(batch.getGroup(),
+                    k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(batch.getGroup()), configuration.getMaxBatchSize()));
 
             synchronized (consolidator) {
                 if (consolidator.add(batch, confirmation)) {
@@ -258,7 +251,7 @@ public class MessageProcessor implements AutoCloseable  {
         }
 
         if (consolidatedBatch.batch.isEmpty())
-            logger.debug("Batch cache for group \"{}\" has been concurrently reset. Skip storing", group);
+            logger.debug("Batch cache for group \"{}\" has been concurrently reset. Skip storing", batch.getGroup());
         else
             persist(consolidatedBatch);
     }
@@ -417,7 +410,6 @@ public class MessageProcessor implements AutoCloseable  {
                 @Override
                 public void onFail(GroupedMessageBatchToStore batch) {
                     data.confirmations.forEach(MessageProcessor::reject);
-                    invalidateCacheForGroupedBatch(batch);
                 }
             });
         } catch (Exception e) {
@@ -428,27 +420,6 @@ public class MessageProcessor implements AutoCloseable  {
             timer.observeDuration();
         }
     }
-
-    private void invalidateCacheForGroupedBatch (GroupedMessageBatchToStore batch) {
-        // Remove invalid cached keys
-
-        for (StoredMessage message : batch.getMessages()) {
-            sessions.remove(new SessionKey(
-                    message.getBookId().getName(),
-                    message.getSessionAlias(),
-                    batch.getGroup(),
-                    message.getDirection()));
-        }
-    }
-
-    private void invalidateCacheForRawMessages(List<RawMessage> messages) {
-        // Remove invalid cached keys
-
-        for (RawMessage message : messages) {
-            sessions.remove(new SessionKey(message.getMetadata().getId()));
-        }
-    }
-
 
     private SessionKey createSessionKey(RawMessage message) {
         return new SessionKey(message.getMetadata().getId());

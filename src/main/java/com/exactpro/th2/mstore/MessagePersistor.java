@@ -46,7 +46,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
     private final FutureTracker<Void> futures;
 
     private final MessagePersistorMetrics<PersistenceTask<GroupedMessageBatchToStore>> metrics;
-    private final ScheduledExecutorService samplerService;
+    private final ScheduledExecutorService executor;
 
     private volatile boolean stopped;
     private final Object signal = new Object();
@@ -62,7 +62,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         this.futures = new FutureTracker<>();
 
         this.metrics = new MessagePersistorMetrics<>(taskQueue);
-        this.samplerService = Executors.newSingleThreadScheduledExecutor();
+        this.executor = Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors()); // FIXME: make thread count configurable
     }
 
     public void start() throws InterruptedException {
@@ -81,7 +81,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
         LOGGER.info("Message batch persistor started. Maximum data size for tasks = {}, maximum number of tasks = {}",
                 taskQueue.getMaxDataSize(), taskQueue.getMaxTaskCount());
-        samplerService.scheduleWithFixedDelay(
+        executor.scheduleWithFixedDelay(
                 metrics::takeQueueMeasurements,
                 0,
                 1,
@@ -120,7 +120,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                                 task.getPayload().complete();
                             }
                         }
-                );
+                        , executor);
 
         futures.track(result);
     }
@@ -146,8 +146,8 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
             LOGGER.error("Cannot await all futures to be finished", ex);
         }
         try {
-            samplerService.shutdown();
-            samplerService.awaitTermination(1, TimeUnit.MINUTES);
+            executor.shutdown();
+            executor.awaitTermination(1, TimeUnit.MINUTES);
         } catch (InterruptedException e) {
         }
     }

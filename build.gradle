@@ -7,8 +7,8 @@ plugins {
 }
 
 ext {
-    cradleVersion = '5.0.0-separate-executor-4314810594-1a4926c-SNAPSHOT'
-    commonVersion   = '5.2.0-dev'
+    cradleVersion = '5.0.0-separate-executor-gm-4342140892-8210b07-SNAPSHOT'
+    commonVersion   = '5.2.0-separate-executor-4341994826-aa0584b-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -52,7 +52,7 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:4.1.0')
+    api platform('com.exactpro.th2:bom:4.2.0')
 
     implementation "com.exactpro.th2:common:$commonVersion"
     implementation 'com.exactpro.th2:task-utils:0.1.1'

@@ -170,9 +170,7 @@ public class MessageProcessor implements AutoCloseable  {
             for (RawMessage message: messages) {
                 SessionKey sessionKey = createSessionKey(message);
                 MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message);
-                SessionData sessionData = sessions.computeIfAbsent(sessionKey, k -> new SessionData());
-
-                sessionData.getAndUpdateOrderingProperties(sequenceToTimestamp);
+                sessions.computeIfAbsent(sessionKey, k -> new SessionData(sequenceToTimestamp));
             }
 
             if (deliveryMetadata.isRedelivered()) {
@@ -295,20 +293,16 @@ public class MessageProcessor implements AutoCloseable  {
             }
 
             MessageOrderingProperties orderingProperties = extractOrderingProperties(message);
-            MessageOrderingProperties lastOrderingProperties;
-            if (localCache.containsKey(sessionKey)) {
-                lastOrderingProperties = localCache.get(sessionKey).getLastOrderingProperties();
-            }else if (sessions.containsKey(sessionKey)){
-                lastOrderingProperties = sessions.get(sessionKey).getLastOrderingProperties();
-            } else {
-                lastOrderingProperties = loadLastOrderingProperties(sessionKey);
+            SessionData sessionData = localCache.get(sessionKey);
+            if (sessionData == null) {
+                sessionData = sessions.get(sessionKey);
             }
+            MessageOrderingProperties lastOrderingProperties = sessionData == null
+                    ? loadLastOrderingProperties(sessionKey)
+                    : sessionData.getLastOrderingProperties();
 
             verifyOrderingProperties(i, lastOrderingProperties, orderingProperties);
-
-            SessionData sessionData = new SessionData();
-            sessionData.getAndUpdateOrderingProperties(orderingProperties);
-            localCache.put(sessionKey, sessionData);
+            localCache.put(sessionKey, new SessionData(orderingProperties));
         }
     }
 
@@ -481,18 +475,15 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
     static class SessionData {
-        private final AtomicReference<MessageOrderingProperties> lastOrderingProperties =
-                new AtomicReference<>(MessageOrderingProperties.MIN_VALUE);
+        private final MessageOrderingProperties lastOrderingProperties;
 
-        SessionData() {
-        }
 
-        public MessageOrderingProperties getAndUpdateOrderingProperties(MessageOrderingProperties orderingProperties) {
-            return lastOrderingProperties.getAndAccumulate(orderingProperties, maxBy(MessageOrderingProperties.COMPARATOR));
+        SessionData(MessageOrderingProperties orderingProperties) {
+            lastOrderingProperties = orderingProperties;
         }
 
         public MessageOrderingProperties getLastOrderingProperties() {
-            return lastOrderingProperties.get();
+            return lastOrderingProperties;
         }
     }
 }

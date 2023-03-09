@@ -297,7 +297,7 @@ public class MessageProcessor implements AutoCloseable  {
             Instant messageTimestamp = toInstant(message.getMetadata().getId().getTimestamp());
             if (ts.isAfter(messageTimestamp)) {
                 throw new IllegalArgumentException(format(
-                        "Received grouped batch `%s` containing message with timestamp %, but previously was %",
+                        "Received grouped batch `%s` containing message with timestamp %s, but previously was %s",
                         groupKey.group,
                         messageTimestamp,
                         ts
@@ -477,10 +477,6 @@ public class MessageProcessor implements AutoCloseable  {
 
     private SessionKey createSessionKey(RawMessage message) {
         return new SessionKey(message.getMetadata().getId());
-    }
-
-    private long extractSequence(RawMessage message) {
-        return message.getMetadata().getId().getSequence();
     }
 
     protected static class SessionKey {

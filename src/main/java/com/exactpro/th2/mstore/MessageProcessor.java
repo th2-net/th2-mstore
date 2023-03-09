@@ -163,14 +163,13 @@ public class MessageProcessor implements AutoCloseable  {
                 return;
             }
 
-            if (!deliveryMetadata.isRedelivered())
-                verifyBatch(messages);
-
             var firstMessage = messages.get(0);
-            String group = createSessionKey(firstMessage).sessionGroup;
             GroupKey groupKey = new GroupKey(firstMessage.getMetadata().getId());
 
-            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(group, messages);
+            if (!deliveryMetadata.isRedelivered())
+                verifyBatch(groupKey, messages);
+
+            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(groupKey.group, messages);
 
             for (RawMessage message: messages) {
                 SessionKey sessionKey = createSessionKey(message);
@@ -280,19 +279,16 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
 
-    private void verifyBatch(List<RawMessage> messages) {
+    private void verifyBatch(GroupKey groupKey, List<RawMessage> messages) {
         HashMap<SessionKey, SessionData> localCache = new HashMap<>();
         var firstMessage = messages.get(0);
-        String group = createSessionKey(firstMessage).sessionGroup;
-
         SessionKey firstSessionKey = null;
 
         var bookId = new BookId(firstMessage.getMetadata().getId().getBookName());
-        GroupKey groupKey = new GroupKey(firstMessage.getMetadata().getId());
 
         Instant ts = groups.get(groupKey);
         if (ts == null) {
-            ts = loadLastMessageTimestamp(bookId, group);
+            ts = loadLastMessageTimestamp(bookId, groupKey.group);
         }
 
         for (int i = 0; i < messages.size(); i++) {
@@ -302,7 +298,7 @@ public class MessageProcessor implements AutoCloseable  {
             if (ts.isAfter(messageTimestamp)) {
                 throw new IllegalArgumentException(format(
                         "Received grouped batch `%s` containing message with timestamp %, but previously was %",
-                        group,
+                        groupKey.group,
                         messageTimestamp,
                         ts
                 ));

@@ -60,7 +60,9 @@ public class MessageProcessor implements AutoCloseable  {
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessions = new ConcurrentHashMap<>();
+    private final Map<GroupKey, Instant> groups = new ConcurrentHashMap<>();
     private final Map<String, BatchConsolidator> batchCaches = new ConcurrentHashMap<>();
+
     private final Configuration configuration;
     private volatile ScheduledFuture<?> drainFuture;
     private final MessageRouter<RawMessageBatch> router;
@@ -161,11 +163,13 @@ public class MessageProcessor implements AutoCloseable  {
                 return;
             }
 
-            if (!deliveryMetadata.isRedelivered())
-                verifyBatch(messages);
+            var firstMessage = messages.get(0);
+            GroupKey groupKey = new GroupKey(firstMessage.getMetadata().getId());
 
-            String group = createSessionKey(messages.get(0)).sessionGroup;
-            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(group, messages);
+            if (!deliveryMetadata.isRedelivered())
+                verifyBatch(groupKey, messages);
+
+            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(groupKey.group, messages);
 
             for (RawMessage message: messages) {
                 SessionKey sessionKey = createSessionKey(message);
@@ -174,6 +178,7 @@ public class MessageProcessor implements AutoCloseable  {
 
                 sessionData.getAndUpdateOrderingProperties(sequenceToTimestamp);
             }
+            groups.put(groupKey, groupedMessageBatchToStore.getLastTimestamp());
 
             if (deliveryMetadata.isRedelivered()) {
                 persist(new ConsolidatedBatch(groupedMessageBatchToStore, confirmation));
@@ -274,11 +279,30 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
 
-    private void verifyBatch(List<RawMessage> messages) {
+    private void verifyBatch(GroupKey groupKey, List<RawMessage> messages) {
         HashMap<SessionKey, SessionData> localCache = new HashMap<>();
+        var firstMessage = messages.get(0);
         SessionKey firstSessionKey = null;
+
+        var bookId = new BookId(firstMessage.getMetadata().getId().getBookName());
+
+        Instant ts = groups.get(groupKey);
+        if (ts == null) {
+            ts = loadLastMessageTimestamp(bookId, groupKey.group);
+        }
+
         for (int i = 0; i < messages.size(); i++) {
             RawMessage message = messages.get(i);
+
+            Instant messageTimestamp = toInstant(message.getMetadata().getId().getTimestamp());
+            if (ts.isAfter(messageTimestamp)) {
+                throw new IllegalArgumentException(format(
+                        "Received grouped batch `%s` containing message with timestamp %s, but previously was %s",
+                        groupKey.group,
+                        messageTimestamp,
+                        ts
+                ));
+            }
 
             SessionKey sessionKey = createSessionKey(message);
             if (firstSessionKey == null)
@@ -337,7 +361,7 @@ public class MessageProcessor implements AutoCloseable  {
         }
     }
 
-    private MessageOrderingProperties loadLastOrderingProperties(SessionKey sessionKey){
+    MessageOrderingProperties loadLastOrderingProperties(SessionKey sessionKey){
         long lastMessageSequence;
         Instant lastMessageTimestamp;
         try {
@@ -367,7 +391,37 @@ public class MessageProcessor implements AutoCloseable  {
         return new MessageOrderingProperties(lastMessageSequence, toTimestamp(lastMessageTimestamp));
     }
 
+    Instant loadLastMessageTimestamp(BookId book, String groupName){
+        Instant lastMessageTimestamp;
+        try {
+            GroupedMessageFilter filter = new GroupedMessageFilter(book, groupName);
+            filter.setTo(FilterForLess.forLess(Instant.now()));
+            filter.setOrder(Order.REVERSE);
+            filter.setLimit(1);
+            CradleResultSet<StoredGroupedMessageBatch> res = cradleStorage.getGroupedMessageBatches(filter);
+
+            if (res == null) {
+                return Instant.MIN;
+            }
+
+            StoredGroupedMessageBatch batch = res.next();
+
+            if (batch == null) {
+                return Instant.MIN;
+            }
+
+            lastMessageTimestamp = batch.getLastTimestamp();
+        } catch (CradleStorageException | IOException | NoSuchElementException e) {
+            logger.error("Couldn't get last message timestamp for group {}", groupName, e);
+            return Instant.MIN;
+        }
+
+        return lastMessageTimestamp;
+    }
+
+
     private void scheduledDrain() {
+
         logger.trace("Starting scheduled cache drain");
         drain(false);
         logger.trace("Scheduled cache drain ended");
@@ -425,10 +479,6 @@ public class MessageProcessor implements AutoCloseable  {
         return new SessionKey(message.getMetadata().getId());
     }
 
-    private long extractSequence(RawMessage message) {
-        return message.getMetadata().getId().getSequence();
-    }
-
     protected static class SessionKey {
         public final String bookName;
         public final String sessionAlias;
@@ -475,6 +525,42 @@ public class MessageProcessor implements AutoCloseable  {
                     .append("sessionAlias", sessionAlias)
                     .append("sessionGroup", sessionGroup)
                     .append("direction", direction)
+                    .append("bookName", bookName)
+                    .toString();
+        }
+    }
+
+    protected static class GroupKey {
+        public final String bookName;
+        public final String group;
+
+        public GroupKey(MessageID messageID) {
+            this.bookName = Objects.requireNonNull(messageID.getBookName(), "'Book name' parameter");
+            String sessionGroup = messageID.getConnectionId().getSessionGroup();
+            this.group = (sessionGroup == null || sessionGroup.isEmpty()) ?
+                    Objects.requireNonNull(messageID.getConnectionId().getSessionAlias(), "'Session alias' parameter") : sessionGroup;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other)
+                return true;
+            if (!(other instanceof GroupKey))
+                return false;
+            GroupKey that = (GroupKey) other;
+            return  Objects.equals(group, that.group) &&
+                    Objects.equals(bookName, that.bookName);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(group, bookName);
+        }
+
+        @Override
+        public String toString() {
+            return new ToStringBuilder(this, ToStringStyle.NO_CLASS_NAME_STYLE)
+                    .append("group", group)
                     .append("bookName", bookName)
                     .toString();
         }

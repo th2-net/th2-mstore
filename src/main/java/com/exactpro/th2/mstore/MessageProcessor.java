@@ -412,7 +412,7 @@ public class MessageProcessor implements AutoCloseable  {
 
             lastMessageTimestamp = batch.getLastTimestamp();
         } catch (CradleStorageException | IOException | NoSuchElementException e) {
-            logger.error("Couldn't get last message timestamp for group {}", groupName, e);
+            logger.trace("Couldn't get last message timestamp for group {}: {}", groupName, e.getMessage());
             return Instant.MIN;
         }
 

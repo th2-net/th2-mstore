@@ -161,8 +161,9 @@ public class MessageProcessor implements AutoCloseable  {
                 return;
             }
 
-            if (!deliveryMetadata.isRedelivered())
+            if (!deliveryMetadata.isRedelivered()) {
                 verifyBatch(messages);
+            }
 
             String group = createSessionKey(messages.get(0)).sessionGroup;
             GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(group, messages);
@@ -209,6 +210,7 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
 
+    //FIXME: com.exactpro.th2.mstore.MessageProcessor.toCradleBatch() 98,242 ms (40.5%)
     private GroupedMessageBatchToStore toCradleBatch(String group, List<RawMessage> messagesList) throws CradleStorageException {
         GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(group);
         for (RawMessage message : messagesList) {
@@ -273,14 +275,15 @@ public class MessageProcessor implements AutoCloseable  {
 
 
     private void verifyBatch(List<RawMessage> messages) {
-        HashMap<SessionKey, SessionData> localCache = new HashMap<>();
+        Map<SessionKey, SessionData> localCache = new HashMap<>();
         SessionKey firstSessionKey = null;
         for (int i = 0; i < messages.size(); i++) {
             RawMessage message = messages.get(i);
 
             SessionKey sessionKey = createSessionKey(message);
-            if (firstSessionKey == null)
+            if (firstSessionKey == null) {
                 firstSessionKey = sessionKey;
+            }
 
             if(!firstSessionKey.sessionGroup.equals(sessionKey.sessionGroup)){
                 throw new IllegalArgumentException(format(
@@ -423,6 +426,8 @@ public class MessageProcessor implements AutoCloseable  {
         return message.getMetadata().getId().getSequence();
     }
 
+    //FIXME: com.exactpro.th2.mstore.MessageProcessor.verifyBatch() 22,468 ms (9.3%)
+    //static hash
     protected static class SessionKey {
         public final String bookName;
         public final String sessionAlias;

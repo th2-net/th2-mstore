@@ -23,6 +23,7 @@ import com.exactpro.th2.taskutils.BlockingScheduledRetryableTaskQueue;
 import com.exactpro.th2.taskutils.FutureTracker;
 import com.exactpro.th2.taskutils.RetryScheduler;
 import com.exactpro.th2.taskutils.ScheduledRetryableTask;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.prometheus.client.Histogram;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -31,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import static java.util.Objects.requireNonNull;
@@ -39,6 +41,8 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MessagePersistor.class);
     private static final String THREAD_NAME_PREFIX = "MessageBatch-persistor-thread-";
+
+    private static final ThreadFactory THREAD_FACTORY = new ThreadFactoryBuilder().setNameFormat("mstore-message-persistor-%d").build();
 
     private final BlockingScheduledRetryableTaskQueue<PersistenceTask<GroupedMessageBatchToStore>> taskQueue;
     private final int maxTaskRetries;
@@ -62,7 +66,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         this.futures = new FutureTracker<>();
 
         this.metrics = new MessagePersistorMetrics<>(taskQueue);
-        this.executor = Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors()); // FIXME: make thread count configurable
+        this.executor = Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors(), THREAD_FACTORY); // FIXME: make thread count configurable
     }
 
     public void start() throws InterruptedException {

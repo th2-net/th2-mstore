@@ -55,6 +55,7 @@ public class MessageStore {
             MessagePersistor persistor = new MessagePersistor(config, storage);
             shutdownManager.registerResource(persistor);
 
+            //FIXME: com.exactpro.th2.common.schema.message.impl.rabbitmq.raw.RabbitRawBatchRouter.buildFromGroupBatch() 6,817 ms (2.8%)
             // Initialize processor
             MessageProcessor processor = new MessageProcessor(factory.getMessageRouterRawBatch(),
                                                                 storage,

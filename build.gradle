@@ -3,11 +3,11 @@ plugins {
     id 'java-library'
     id 'application'
     id 'com.palantir.docker' version '0.25.0'
-    id "org.owasp.dependencycheck" version "8.1.0"
+    id "org.owasp.dependencycheck" version "8.1.2"
 }
 
 ext {
-    cradleVersion = '5.0.0-size-calculation-4437057515-d3e0333-SNAPSHOT'
+    cradleVersion = '5.0.0-lz4-comp-4479011033-1f3d3b5-SNAPSHOT'
     commonVersion   = '5.2.0-separate-executor-4414722192-7c87a93-SNAPSHOT'
 }
 
@@ -110,4 +110,11 @@ dependencyCheck {
 
 dependencyLocking {
     lockAllConfigurations()
+}
+
+configurations.configureEach {
+    resolutionStrategy {
+        force "com.exactpro.th2:cradle-core:$cradleVersion"
+        force "com.exactpro.th2:cradle-cassandra:$cradleVersion"
+    }
 }

@@ -63,7 +63,7 @@ class TestMessageProcessor {
 
     private final Random random = new Random();
 
-    private MessageProcessor messageStore;
+    private MessageProcessor processor;
 
     private CradleEntitiesFactory cradleEntitiesFactory;
 
@@ -80,13 +80,13 @@ class TestMessageProcessor {
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         when(routerMock.subscribeAllWithManualAck(any(), any(), any())).thenReturn(mock(SubscriberMonitor.class));
         Configuration configuration = Configuration.builder().withDrainInterval(DRAIN_TIMEOUT / 10).build();
-        messageStore = spy(createStore(storageMock, routerMock, persistor, configuration));
-        messageStore.start();
+        processor = spy(createStore(storageMock, routerMock, persistor, configuration));
+        processor.start();
     }
 
     @AfterEach
     void tearDown() {
-        messageStore.close();
+        processor.close();
     }
 
 
@@ -152,7 +152,7 @@ class TestMessageProcessor {
         @Test
         @DisplayName("Empty delivery is not stored")
         void testEmptyDelivery() throws Exception {
-            messageStore.process(deliveryMetadata, deliveryOf(), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(), confirmation);
             verify(persistor, never()).persist(any(), any());
         }
 
@@ -163,7 +163,7 @@ class TestMessageProcessor {
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("test", "group",  Direction.FIRST, 2, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(second, first), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(second, first), confirmation);
             verify(persistor, never()).persist(any(), any());
         }
 
@@ -173,10 +173,10 @@ class TestMessageProcessor {
             String bookName = bookName(random.nextInt());
 
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(first), confirmation);
 
             RawMessage duplicate = createMessage("test", "group", Direction.FIRST, 1, bookName);
-            messageStore.process(deliveryMetadata, deliveryOf(duplicate), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(duplicate), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -203,10 +203,10 @@ class TestMessageProcessor {
             String bookName = bookName(random.nextInt());
 
             RawMessage first = createMessage("testA", "group", Direction.FIRST, 1, bookName);
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(first), confirmation);
 
             RawMessage duplicate = createMessage("testB", "group", Direction.SECOND, 1, bookName);
-            messageStore.process(deliveryMetadata, deliveryOf(duplicate), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(duplicate), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -244,7 +244,7 @@ class TestMessageProcessor {
             String bookName = bookName(random.nextInt());
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(first), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -267,7 +267,7 @@ class TestMessageProcessor {
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("test", "group", Direction.FIRST, 2, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(first, second), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(first, second), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -296,8 +296,8 @@ class TestMessageProcessor {
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("test", "group", Direction.FIRST, 2, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
-            messageStore.process(deliveryMetadata, deliveryOf(second), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(first), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(second), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -322,14 +322,63 @@ class TestMessageProcessor {
             RawMessage secondToProcess = createMessage("test", "group", Direction.FIRST, 2, bookName);
             RawMessage firstToProcess = createMessage("test", "group", Direction.FIRST, 1, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(firstToProcess), confirmation);
-            messageStore.process(deliveryMetadata, deliveryOf(secondToProcess), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(firstToProcess), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(secondToProcess), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
 
             verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(batchCapture.capture(), any());
             verify(confirmation, timeout(DRAIN_TIMEOUT).times(1)).reject();
 
+        }
+        @Test
+        @DisplayName("batch with older message is not stored. case 1")
+        void rejectsDecreasingGroup1() throws Exception {
+
+            Instant last = Instant.parse("2023-01-01T00:00:00Z");
+
+            MessageProcessor processorMock = spy(processor);
+            doReturn(last).when(processorMock).loadLastMessageTimestamp(any(), any());
+
+
+            String bookName = bookName(random.nextInt());
+
+            RawMessage b1m1 = createMessage("test1", "group", Direction.FIRST, 1, last.plusMillis(10), bookName);
+            RawMessage b1m2 = createMessage("test2", "group", Direction.FIRST, 2, last.minusMillis(20), bookName);
+
+            processorMock.process(deliveryMetadata, deliveryOf(b1m1, b1m2), confirmation);
+
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
+
+            verify(persistor, timeout(DRAIN_TIMEOUT).times(0)).persist(batchCapture.capture(), any());
+            verify(confirmation, timeout(DRAIN_TIMEOUT).times(1)).reject();
+        }
+
+        @Test
+        @DisplayName("batch with older message is not stored. case 2")
+        void rejectsDecreasingGroup2() throws Exception {
+
+            Instant last = Instant.parse("2023-01-01T00:00:00Z");
+
+            MessageProcessor processor = spy(TestMessageProcessor.this.processor);
+            doReturn(last).when(processor).loadLastMessageTimestamp(any(), any());
+
+
+            String bookName = bookName(random.nextInt());
+
+            RawMessage b1m1 = createMessage("test1", "group", Direction.FIRST, 1, last.plusMillis(10), bookName);
+            RawMessage b1m2 = createMessage("test2", "group", Direction.FIRST, 2, last.plusMillis(20), bookName);
+
+            RawMessage b2m1 = createMessage("test1", "group", Direction.FIRST, 1, last.plusMillis(30), bookName);
+            RawMessage b2m2 = createMessage("test4", "group", Direction.FIRST, 2, last.plusMillis(10), bookName);
+
+            processor.process(deliveryMetadata, deliveryOf(b1m1, b1m2), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(b2m1, b2m2), confirmation);
+
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
+
+            verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(batchCapture.capture(), any());
+            verify(confirmation, timeout(DRAIN_TIMEOUT).times(1)).reject();
         }
     }
 
@@ -340,7 +389,7 @@ class TestMessageProcessor {
         RawMessage first = createMessage("testA", "group", Direction.FIRST, 1, bookName);
         RawMessage second = createMessage("testB", "group", Direction.FIRST, 2, bookName);
 
-        messageStore.process(deliveryMetadata, deliveryOf(first, second), confirmation);
+        processor.process(deliveryMetadata, deliveryOf(first, second), confirmation);
         verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(any(), any());
     }
 
@@ -351,7 +400,7 @@ class TestMessageProcessor {
         RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
         RawMessage second = createMessage("test", "group", Direction.SECOND, 2, bookName);
 
-        messageStore.process(deliveryMetadata, deliveryOf(first, second), confirmation);
+        processor.process(deliveryMetadata, deliveryOf(first, second), confirmation);
         verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(any(), any());
     }
 
@@ -366,8 +415,8 @@ class TestMessageProcessor {
             RawMessage first = createMessage("testA", "group1", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("testB", "group2", Direction.FIRST, 2, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
-            messageStore.process(deliveryMetadata, deliveryOf(second), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(first), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(second), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -406,7 +455,7 @@ class TestMessageProcessor {
             Persistor<GroupedMessageBatchToStore> persistor,
             Configuration configuration
     ) {
-        return new MessageProcessor(routerMock, cradleStorageMock, persistor, configuration);
+        return new MessageProcessor(routerMock, cradleStorageMock, persistor, configuration, 0);
     }
 
     private RawMessage createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, String bookName) {
@@ -414,6 +463,16 @@ class TestMessageProcessor {
                 .setMetadata(
                         RawMessageMetadata.newBuilder()
                                 .setId(createMessageId(Instant.now(), sessionAlias, sessionGroup, direction, sequence, bookName))
+                                .build()
+                ).setBody(ByteString.copyFrom("test".getBytes(StandardCharsets.UTF_8)))
+                .build();
+    }
+
+    private RawMessage createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, Instant timestamp, String bookName) {
+        return RawMessage.newBuilder()
+                .setMetadata(
+                        RawMessageMetadata.newBuilder()
+                                .setId(createMessageId(timestamp, sessionAlias, sessionGroup, direction, sequence, bookName))
                                 .build()
                 ).setBody(ByteString.copyFrom("test".getBytes(StandardCharsets.UTF_8)))
                 .build();

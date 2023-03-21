@@ -1,4 +1,4 @@
-# Overview (4.0.0)
+# Overview (5.0.0)
 
 Message store (mstore) is an important th2 component responsible for storing raw messages into Cradle. Please refer to [Cradle repository] (https://github.com/th2-net/cradleapi/blob/master/README.md) for more details. This component has a pin for listening messages via MQ.
 
@@ -6,28 +6,47 @@ Users must mark a pin that produces raw messages in conn, read and hand boxes vi
 
 Raw message is a base entity of th2. All incoming / outgoing data is stored in this format
 Every raw message contains important parts:
+* book - name of the book
 * session alias - unique identifier of business session.
 * session group - group id for this session
 * direction - direction of message stream.
 * sequence number - incremental identifier.
 * data - byte representation of raw message 
 
-session alias, direction and sequence number are a **compound unique identifier** of raw messages within th2
+book, session alias, direction and sequence number are a **compound unique identifier** of raw messages within th2
 
 # Configuration
 
 ```json
 {
-  "drain-interval": 1000,
-  "termination-timeout": 5000
+  "maxTaskCount" : 256,
+  "maxTaskDataSize" : 256000000,
+  "maxRetryCount" : 5,
+  "retryDelayBase" : 5000,
+  
+  "rebatching" : true,
+  "drain-interval" : 100,
+  "prefetchRatioToDrain" : 0.8,
+  "maxBatchSize" : 200000,
+  
+  "termination-timeout" : 1000
 }
 ```
++ _maxTaskCount_ - Maximum number of message batches that will be processed simultaneously
++ _maxTaskDataSize_ - Maximum total data size of messages during parallel processing
++ _maxRetryCount_ - Maximum number of retries that will be done in case of message batch persistence failure
++ _retryDelayBase_ - Constant that will be used to calculate next retry time(ms):
+  retryDelayBase * retryNumber
++ _rebatching_ - Parameter determining if mstore should perform re-batching on incoming batches to avoid writing small batches
++ _drain-interval_ - Interval in milliseconds to drain all aggregated batches that are not stored yet. The default value is 1000.
++ _prefetchRatioToDrain_ - Threshold ratio of fetched messages to RabbitMQ prefetch size to force aggregated batch draining.
++ _maxBatchSize_ - Maximum aggregated batch size in case of re-batching
++ _termination-timeout_ - Timeout in milliseconds to await for the inner drain scheduler to finish all the tasks. The default value is 5000.
 
-#### drain-interval
-Interval in milliseconds to drain all aggregated batches that are not stored yet. The default value is 1000.
+If some of these parameters are not provided, mstore will use default(undocumented) value.
+If _maxTaskCount_ or _maxTaskDataSize_ limits are reached during processing, mstore will pause processing new messages
+until some events are processed
 
-#### termination-timeout
-The timeout in milliseconds to await for the inner drain scheduler to finish all the tasks. The default value is 5000.
 
 # Custom resources for infra-mgr
 
@@ -44,7 +63,14 @@ spec:
   image-name: ghcr.io/th2-net/th2-mstore
   image-version: <image version>
   custom-settings:
-    drain-interval: 1000
+    maxTaskCount: 256
+    maxTaskDataSize: 256000000
+    maxRetryCount: 5
+    retryDelayBase: 5000
+    rebatching: true
+    drain-interval: 100
+    prefetchRatioToDrain: 0.8
+    maxBatchSize: 200000
     termination-timeout: 5000
   extended-settings:
     service:
@@ -53,11 +79,11 @@ spec:
       JAVA_TOOL_OPTIONS: "-XX:+ExitOnOutOfMemoryError -Ddatastax-java-driver.advanced.connection.init-query-timeout=\"5000 milliseconds\""
     resources:
       limits:
-        memory: 500Mi
-        cpu: 200m
+        memory: 1024Mi
+        cpu: 2000m
       requests:
-        memory: 100Mi
-        cpu: 20m
+        memory: 512Mi
+        cpu: 1000m
 ```
 
 # Common features
@@ -65,9 +91,9 @@ spec:
 This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
 
-## 4.0.0
+## 5.0.0
 
-+ Migration to books/pages cradle 4.0.0
++ Migration to books/pages cradle 5.0.0
 
 ## 3.4.1
 

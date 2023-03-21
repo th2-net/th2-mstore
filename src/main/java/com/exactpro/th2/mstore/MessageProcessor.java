@@ -26,9 +26,11 @@ import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
-import com.exactpro.th2.common.message.SessionKey;
-import com.exactpro.th2.common.schema.message.*;
+import com.exactpro.th2.common.schema.message.DeliveryMetadata;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
+import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.QueueAttribute;
+import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import io.prometheus.client.Histogram;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
@@ -58,25 +60,31 @@ public class MessageProcessor implements AutoCloseable  {
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessions = new ConcurrentHashMap<>();
+    private final Map<GroupKey, Instant> groups = new ConcurrentHashMap<>();
     private final Map<String, BatchConsolidator> batchCaches = new ConcurrentHashMap<>();
+
     private final Configuration configuration;
     private volatile ScheduledFuture<?> drainFuture;
     private final MessageRouter<RawMessageBatch> router;
     private SubscriberMonitor monitor;
     private final Persistor<GroupedMessageBatchToStore> persistor;
     private final MessageProcessorMetrics metrics;
+    private final ManualDrainTrigger manualDrain;
 
     public MessageProcessor(
             @NotNull MessageRouter<RawMessageBatch> router,
             @NotNull CradleStorage cradleStorage,
             @NotNull Persistor<GroupedMessageBatchToStore> persistor,
-            @NotNull Configuration configuration
+            @NotNull Configuration configuration,
+            @NotNull Integer prefetchCount
     ) {
         this.router = requireNonNull(router, "Message router can't be null");
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.persistor = Objects.requireNonNull(persistor, "Persistor can't be null");
         this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
         this.metrics = new MessageProcessorMetrics();
+
+        this.manualDrain = new ManualDrainTrigger(drainExecutor, (int) Math.round(prefetchCount * configuration.getPrefetchRatioToDrain()));
     }
 
     public void start() {
@@ -90,11 +98,15 @@ public class MessageProcessor implements AutoCloseable  {
                 throw new RuntimeException("Can not find queues for subscriber");
             }
         }
-        drainFuture = drainExecutor.scheduleAtFixedRate(this::drainByScheduler,
-                                                        configuration.getDrainInterval(),
-                                                        configuration.getDrainInterval(),
-                                                        TimeUnit.MILLISECONDS);
-        logger.info("Drain scheduler is started");
+
+        logger.info("Rebatching is {}", (configuration.isRebatching() ? "on" : "off"));
+        if (configuration.isRebatching()) {
+            drainFuture = drainExecutor.scheduleAtFixedRate(this::scheduledDrain,
+                                                            configuration.getDrainInterval(),
+                                                            configuration.getDrainInterval(),
+                                                            TimeUnit.MILLISECONDS);
+            logger.info("Drain scheduler is started");
+        }
     }
 
 
@@ -151,23 +163,27 @@ public class MessageProcessor implements AutoCloseable  {
                 return;
             }
 
-            if (!deliveryMetadata.isRedelivered())
-                verifyBatch(messages);
+            var firstMessage = messages.get(0);
+            GroupKey groupKey = new GroupKey(firstMessage.getMetadata().getId());
 
-            String group = null;
+            if (!deliveryMetadata.isRedelivered())
+                verifyBatch(groupKey, messages);
+
+            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(groupKey.group, messages);
+
             for (RawMessage message: messages) {
                 SessionKey sessionKey = createSessionKey(message);
-                group = sessionKey.sessionGroup;
                 MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message);
                 SessionData sessionData = sessions.computeIfAbsent(sessionKey, k -> new SessionData());
 
                 sessionData.getAndUpdateOrderingProperties(sequenceToTimestamp);
             }
+            groups.put(groupKey, groupedMessageBatchToStore.getLastTimestamp());
 
             if (deliveryMetadata.isRedelivered()) {
-                persist(new ConsolidatedBatch(toCradleBatch(group, messages), confirmation));
+                persist(new ConsolidatedBatch(groupedMessageBatchToStore, confirmation));
             } else {
-                storeMessages(group, messages, confirmation);
+                storeMessages(groupedMessageBatchToStore, confirmation);
             }
         } catch (Exception ex) {
             logger.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
@@ -210,26 +226,37 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
 
-    private void storeMessages(String group, List<RawMessage> messagesList, Confirmation confirmation) throws Exception {
-        logger.debug("Process {} messages started", messagesList.size());
-
-        GroupedMessageBatchToStore batch = toCradleBatch(group, messagesList);
-        BatchConsolidator consolidator = batchCaches.computeIfAbsent(group,
-                k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(group)));
+    private void storeMessages(GroupedMessageBatchToStore batch, Confirmation confirmation) throws Exception {
+        logger.trace("Process {} messages started", batch.getMessageCount());
 
         ConsolidatedBatch consolidatedBatch;
-        synchronized (consolidator) {
-            if (consolidator.add(batch, confirmation)) {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
+        if (configuration.isRebatching()) {
+            BatchConsolidator consolidator = batchCaches.computeIfAbsent(batch.getGroup(),
+                    k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(batch.getGroup()), configuration.getMaxBatchSize()));
+
+            synchronized (consolidator) {
+                if (consolidator.add(batch, confirmation)) {
+                    manualDrain.registerMessage();
+                    if (logger.isTraceEnabled()) {
+                        logger.trace("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
+                    }
+
+                    manualDrain.runConditionally(this::manualDrain);
+                    return;
                 }
-                return;
+
+                consolidatedBatch = consolidator.resetAndUpdate(batch, confirmation);
+
+                manualDrain.unregisterMessages(consolidatedBatch.confirmations.size());
+                manualDrain.registerMessage();
+                manualDrain.runConditionally(this::manualDrain);
             }
-            consolidatedBatch = consolidator.resetAndUpdate(batch, confirmation);
+        } else {
+            consolidatedBatch = new ConsolidatedBatch(batch, confirmation);
         }
 
         if (consolidatedBatch.batch.isEmpty())
-            logger.debug("Batch cache for group \"{}\" has been concurrently reset. Skip storing", group);
+            logger.debug("Batch cache for group \"{}\" has been concurrently reset. Skip storing", batch.getGroup());
         else
             persist(consolidatedBatch);
     }
@@ -252,11 +279,30 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
 
-    private void verifyBatch(List<RawMessage> messages) {
+    private void verifyBatch(GroupKey groupKey, List<RawMessage> messages) {
         HashMap<SessionKey, SessionData> localCache = new HashMap<>();
+        var firstMessage = messages.get(0);
         SessionKey firstSessionKey = null;
+
+        var bookId = new BookId(firstMessage.getMetadata().getId().getBookName());
+
+        Instant ts = groups.get(groupKey);
+        if (ts == null) {
+            ts = loadLastMessageTimestamp(bookId, groupKey.group);
+        }
+
         for (int i = 0; i < messages.size(); i++) {
             RawMessage message = messages.get(i);
+
+            Instant messageTimestamp = toInstant(message.getMetadata().getId().getTimestamp());
+            if (ts.isAfter(messageTimestamp)) {
+                throw new IllegalArgumentException(format(
+                        "Received grouped batch `%s` containing message with timestamp %s, but previously was %s",
+                        groupKey.group,
+                        messageTimestamp,
+                        ts
+                ));
+            }
 
             SessionKey sessionKey = createSessionKey(message);
             if (firstSessionKey == null)
@@ -315,7 +361,7 @@ public class MessageProcessor implements AutoCloseable  {
         }
     }
 
-    private MessageOrderingProperties loadLastOrderingProperties(SessionKey sessionKey){
+    MessageOrderingProperties loadLastOrderingProperties(SessionKey sessionKey){
         long lastMessageSequence;
         Instant lastMessageTimestamp;
         try {
@@ -345,10 +391,47 @@ public class MessageProcessor implements AutoCloseable  {
         return new MessageOrderingProperties(lastMessageSequence, toTimestamp(lastMessageTimestamp));
     }
 
-    private void drainByScheduler() {
-        logger.debug("Starting scheduled cache drain");
+    Instant loadLastMessageTimestamp(BookId book, String groupName){
+        Instant lastMessageTimestamp;
+        try {
+            GroupedMessageFilter filter = new GroupedMessageFilter(book, groupName);
+            filter.setTo(FilterForLess.forLess(Instant.now()));
+            filter.setOrder(Order.REVERSE);
+            filter.setLimit(1);
+            CradleResultSet<StoredGroupedMessageBatch> res = cradleStorage.getGroupedMessageBatches(filter);
+
+            if (res == null) {
+                return Instant.MIN;
+            }
+
+            StoredGroupedMessageBatch batch = res.next();
+
+            if (batch == null) {
+                return Instant.MIN;
+            }
+
+            lastMessageTimestamp = batch.getLastTimestamp();
+        } catch (CradleStorageException | IOException | NoSuchElementException e) {
+            logger.trace("Couldn't get last message timestamp for group {}: {}", groupName, e.getMessage());
+            return Instant.MIN;
+        }
+
+        return lastMessageTimestamp;
+    }
+
+
+    private void scheduledDrain() {
+
+        logger.trace("Starting scheduled cache drain");
         drain(false);
-        logger.debug("Scheduled cache drain ended");
+        logger.trace("Scheduled cache drain ended");
+    }
+
+    private void manualDrain() {
+        logger.trace("Starting manual cache drain");
+        drain(true);
+        manualDrain.completeDraining();
+        logger.trace("Manual cache drain ended");
     }
 
     private void drain(boolean force) {
@@ -360,6 +443,7 @@ public class MessageProcessor implements AutoCloseable  {
                     return;
                 data = consolidator.reset();
             }
+            manualDrain.unregisterMessages(data.confirmations.size());
             if (data.batch.isEmpty())
                 return;
             persist(data);
@@ -391,13 +475,8 @@ public class MessageProcessor implements AutoCloseable  {
         }
     }
 
-
     private SessionKey createSessionKey(RawMessage message) {
         return new SessionKey(message.getMetadata().getId());
-    }
-
-    private long extractSequence(RawMessage message) {
-        return message.getMetadata().getId().getSequence();
     }
 
     protected static class SessionKey {
@@ -413,6 +492,13 @@ public class MessageProcessor implements AutoCloseable  {
 
             String group = messageID.getConnectionId().getSessionGroup();
             this.sessionGroup = (group == null || group.isEmpty()) ? this.sessionAlias : group;
+        }
+
+        public SessionKey (String bookName, String sessionAlias, String sessionGroup, Direction direction) {
+            this.bookName = bookName;
+            this.sessionAlias = sessionAlias;
+            this.sessionGroup = sessionGroup;
+            this.direction = direction;
         }
 
         @Override
@@ -439,6 +525,42 @@ public class MessageProcessor implements AutoCloseable  {
                     .append("sessionAlias", sessionAlias)
                     .append("sessionGroup", sessionGroup)
                     .append("direction", direction)
+                    .append("bookName", bookName)
+                    .toString();
+        }
+    }
+
+    protected static class GroupKey {
+        public final String bookName;
+        public final String group;
+
+        public GroupKey(MessageID messageID) {
+            this.bookName = Objects.requireNonNull(messageID.getBookName(), "'Book name' parameter");
+            String sessionGroup = messageID.getConnectionId().getSessionGroup();
+            this.group = (sessionGroup == null || sessionGroup.isEmpty()) ?
+                    Objects.requireNonNull(messageID.getConnectionId().getSessionAlias(), "'Session alias' parameter") : sessionGroup;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other)
+                return true;
+            if (!(other instanceof GroupKey))
+                return false;
+            GroupKey that = (GroupKey) other;
+            return  Objects.equals(group, that.group) &&
+                    Objects.equals(bookName, that.bookName);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(group, bookName);
+        }
+
+        @Override
+        public String toString() {
+            return new ToStringBuilder(this, ToStringStyle.NO_CLASS_NAME_STYLE)
+                    .append("group", group)
                     .append("bookName", bookName)
                     .toString();
         }

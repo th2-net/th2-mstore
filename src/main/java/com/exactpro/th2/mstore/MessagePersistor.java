@@ -108,7 +108,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         final Histogram.Timer timer = metrics.startMeasuringPersistenceLatency();
 
         CompletableFuture<Void> result = cradleStorage.storeGroupedMessageBatchAsync(batch)
-                .thenRun(() -> LOGGER.debug("Stored batch with group '{}'", batch.getGroup()))
+                .thenRun(() -> LOGGER.trace("Stored batch with group '{}'", batch.getGroup()))
                 .whenCompleteAsync((unused, ex) ->
                         {
                             timer.observeDuration();

@@ -6,8 +6,9 @@ RUN gradle --no-daemon clean build dockerPrepare -Prelease_version=${release_ver
 FROM adoptopenjdk/openjdk11:alpine
 
 # FIXME: remove when release
-RUN apt update
-RUN apt install ifstat
+RUN cat /etc/os-release
+RUN apk update
+RUN apk add --upgrade ifstate
 
 WORKDIR /home
 COPY --from=build /home/gradle/build/docker .

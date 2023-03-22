@@ -4,6 +4,11 @@ COPY ./ .
 RUN gradle --no-daemon clean build dockerPrepare -Prelease_version=${release_version}
 
 FROM adoptopenjdk/openjdk11:alpine
+
+# FIXME: remove when release
+RUN apt udate \
+    apt-get install -y ifstat
+
 WORKDIR /home
 COPY --from=build /home/gradle/build/docker .
 ENTRYPOINT ["/home/service/bin/service", "/home/service/etc/config.yml"]

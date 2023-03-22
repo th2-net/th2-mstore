@@ -7,7 +7,7 @@ plugins {
 }
 
 ext {
-    cradleVersion = '5.0.0-lz4-comp-4479011033-1f3d3b5-SNAPSHOT'
+    cradleVersion = '5.0.0-lz4-comp-4488255917-e703912-SNAPSHOT'
     commonVersion   = '5.2.0-separate-executor-4414722192-7c87a93-SNAPSHOT'
 }
 

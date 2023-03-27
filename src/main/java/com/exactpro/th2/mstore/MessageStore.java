@@ -57,11 +57,17 @@ public class MessageStore {
 
             //FIXME: com.exactpro.th2.common.schema.message.impl.rabbitmq.raw.RabbitRawBatchRouter.buildFromGroupBatch() 6,817 ms (2.8%)
             // Initialize processor
-            MessageProcessor processor = new MessageProcessor(factory.getMessageRouterRawBatch(),
-                                                                storage,
-                                                                persistor,
-                                                                config,
-                                                                factory.getConnectionManagerConfiguration().getPrefetchCount());
+            AbstractMessageProcessor processor = config.isUseDemoMode()
+                    ? new DemoMessageProcessor(factory.getDemoMessageBatchRouter(),
+                        storage,
+                        persistor,
+                        config,
+                        factory.getConnectionManagerConfiguration().getPrefetchCount())
+                    : new ProtoMessageProcessor(factory.getMessageRouterRawBatch(),
+                        storage,
+                        persistor,
+                        config,
+                        factory.getConnectionManagerConfiguration().getPrefetchCount());
             shutdownManager.registerResource(processor);
 
             persistor.start();

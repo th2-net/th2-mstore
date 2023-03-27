@@ -31,6 +31,7 @@ public class Configuration {
     private double prefetchRatioToDrain;
     private boolean rebatching;
     private int  maxBatchSize;
+    private boolean useDemoMode;
 
     private Configuration() {
     }
@@ -77,6 +78,10 @@ public class Configuration {
         return maxBatchSize;
     }
 
+    public boolean isUseDemoMode() {
+        return useDemoMode;
+    }
+
     public static Builder builder() {
         return new Builder();
     }
@@ -84,6 +89,7 @@ public class Configuration {
     @JsonPOJOBuilder
     public static final class Builder {
         private static final boolean DEFAULT_REBATCHING = true;
+        private static final boolean DEFAULT_USE_DEMO_MODE = false;
         private static final int DEFAULT_MAX_BATCH_SIZE = 128_000;
         private static final long DEFAULT_DRAIN_INTERVAL = 1000L;
         private static final long DEFAULT_WAIT_TIMEOUT = 5000L;
@@ -122,6 +128,8 @@ public class Configuration {
         @JsonProperty("maxBatchSize")
         private int  maxBatchSize;
 
+        private boolean useDemoMode;
+
         private Builder() {
             drainInterval = DEFAULT_DRAIN_INTERVAL;
             terminationTimeout = DEFAULT_WAIT_TIMEOUT;
@@ -132,6 +140,7 @@ public class Configuration {
             prefetchRatioToDrain = DEFAULT_PREFETCH_RATIO_TO_DRAIN;
             rebatching = DEFAULT_REBATCHING;
             maxBatchSize = DEFAULT_MAX_BATCH_SIZE;
+            useDemoMode = DEFAULT_USE_DEMO_MODE;
         }
 
 
@@ -180,6 +189,12 @@ public class Configuration {
             return this;
         }
 
+        public Builder withUseDemoMode(boolean useDemoMode) {
+            this.useDemoMode = useDemoMode;
+            return this;
+        }
+
+
         public Configuration build() {
             Configuration configuration = new Configuration();
             configuration.drainInterval = drainInterval;
@@ -191,6 +206,7 @@ public class Configuration {
             configuration.prefetchRatioToDrain = this.prefetchRatioToDrain;
             configuration.rebatching = this.rebatching;
             configuration.maxBatchSize = maxBatchSize;
+            configuration.useDemoMode = useDemoMode;
             return configuration;
         }
     }

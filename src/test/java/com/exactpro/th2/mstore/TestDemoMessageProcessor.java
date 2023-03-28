@@ -27,7 +27,8 @@ import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoDirection;
-import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoMessageBatch;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoGroupBatch;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoMessageGroup;
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoMessageId;
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoRawMessage;
 import org.junit.jupiter.api.AfterEach;
@@ -43,6 +44,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Random;
+import java.util.stream.Collectors;
 
 import static com.exactpro.th2.mstore.DemoMessageProcessor.toCradleDirection;
 import static java.util.Collections.emptyList;
@@ -67,7 +69,7 @@ class TestDemoMessageProcessor {
     private final CradleManager cradleManagerMock = mock(CradleManager.class);
     private final CradleStorage storageMock = mock(CradleStorage.class);
     @SuppressWarnings("unchecked")
-    private final MessageRouter<DemoMessageBatch> routerMock = (MessageRouter<DemoMessageBatch>) mock(MessageRouter.class);
+    private final MessageRouter<DemoGroupBatch> routerMock = (MessageRouter<DemoGroupBatch>) mock(MessageRouter.class);
 
     @SuppressWarnings("unchecked")
     private final Persistor persistor = mock(Persistor.class);
@@ -109,7 +111,7 @@ class TestDemoMessageProcessor {
 
     @SafeVarargs
     @SuppressWarnings("varargs")
-    private DemoMessageBatch deliveryOf(DemoRawMessage... messages) {
+    private DemoGroupBatch deliveryOf(DemoRawMessage... messages) {
         return createDelivery(List.of(messages));
     }
 
@@ -400,7 +402,7 @@ class TestDemoMessageProcessor {
 
     private DemoMessageProcessor createStore(
             CradleStorage cradleStorageMock,
-            MessageRouter<DemoMessageBatch> routerMock,
+            MessageRouter<DemoGroupBatch> routerMock,
             Persistor<GroupedMessageBatchToStore> persistor,
             Configuration configuration
     ) {
@@ -411,8 +413,10 @@ class TestDemoMessageProcessor {
         return new DemoRawMessage(new DemoMessageId(bookName, sessionGroup, sessionAlias, direction, sequence, emptyList(), Instant.now()), emptyMap(), "", "test".getBytes(StandardCharsets.UTF_8));
     }
 
-    private DemoMessageBatch createDelivery(List<DemoRawMessage> messages) {
-        return new DemoMessageBatch("", "", messages);
+    private DemoGroupBatch createDelivery(List<DemoRawMessage> messages) {
+        return new DemoGroupBatch("", "", messages.stream()
+                .map(msg -> new DemoMessageGroup(List.of(msg)))
+                .collect(Collectors.toList()));
     }
 
     private Instant extractTimestamp(DemoRawMessage message) {

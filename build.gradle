@@ -7,8 +7,8 @@ plugins {
 }
 
 ext {
-    cradleVersion   = '5.0.0-lz4-comp-4488255917-e703912-SNAPSHOT'
-    commonVersion   = '5.2.0-separate-executor-4529851244-8ba6027-SNAPSHOT'
+    cradleVersion   = '5.0.0-separate-executor-4540242539-6c92e55-SNAPSHOT'
+    commonVersion   = '5.2.0-separate-executor-4540494014-0b4ad85-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'

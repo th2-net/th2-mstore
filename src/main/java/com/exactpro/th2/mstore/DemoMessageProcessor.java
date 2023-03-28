@@ -27,8 +27,9 @@ import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirma
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoDirection;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoGroupBatch;
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoMessage;
-import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoMessageBatch;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoMessageGroup;
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoMessageId;
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoRawMessage;
 import org.jetbrains.annotations.NotNull;
@@ -44,11 +45,11 @@ import static java.util.Objects.requireNonNull;
 
 public class DemoMessageProcessor extends AbstractMessageProcessor {
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoMessageProcessor.class);
-    private final MessageRouter<DemoMessageBatch> router;
+    private final MessageRouter<DemoGroupBatch> router;
     private SubscriberMonitor monitor;
 
     public DemoMessageProcessor(
-            @NotNull MessageRouter<DemoMessageBatch> router,
+            @NotNull MessageRouter<DemoGroupBatch> router,
             @NotNull CradleStorage cradleStorage,
             @NotNull Persistor<GroupedMessageBatchToStore> persistor,
             @NotNull Configuration configuration,
@@ -87,9 +88,9 @@ public class DemoMessageProcessor extends AbstractMessageProcessor {
     }
 
 
-    void process(DeliveryMetadata deliveryMetadata, DemoMessageBatch messageBatch, Confirmation confirmation) {
+    void process(DeliveryMetadata deliveryMetadata, DemoGroupBatch messageBatch, Confirmation confirmation) {
         try {
-            List<DemoMessage<?>> messages = messageBatch.getMessages();
+            List<DemoMessageGroup> messages = messageBatch.getGroups();
             if (messages.isEmpty()) {
                 LOGGER.warn("Received empty batch {}", messageBatch);
                 confirm(confirmation);
@@ -100,12 +101,13 @@ public class DemoMessageProcessor extends AbstractMessageProcessor {
                 verifyBatch(messages);
             }
 
-            String group = createSessionKey((DemoRawMessage) messages.get(0)).sessionGroup;
+            String group = createSessionKey((DemoRawMessage) messages.get(0).getMessages().get(0)).sessionGroup;
             GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(group, messages);
 
-            for (DemoMessage<?> message: messages) {
-                SessionKey sessionKey = createSessionKey((DemoRawMessage) message);
-                MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties((DemoRawMessage) message);
+            for (DemoMessageGroup demoMessageGroup: messages) {
+                DemoRawMessage demoRawMessage = (DemoRawMessage) demoMessageGroup.getMessages().get(0);
+                SessionKey sessionKey = createSessionKey(demoRawMessage);
+                MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(demoRawMessage);
                 sessions.computeIfAbsent(sessionKey, k -> new SessionData(sequenceToTimestamp));
             }
 
@@ -146,26 +148,31 @@ public class DemoMessageProcessor extends AbstractMessageProcessor {
 
 
     //FIXME: com.exactpro.th2.mstore.MessageProcessor.toCradleBatch() 98,242 ms (40.5%)
-    private GroupedMessageBatchToStore toCradleBatch(String group, List<DemoMessage<?>> messagesList) throws CradleStorageException {
+    private GroupedMessageBatchToStore toCradleBatch(String group, List<DemoMessageGroup> messagesList) throws CradleStorageException {
         GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(group);
-        for (DemoMessage<?> message : messagesList) {
-            MessageToStore messageToStore = toCradleMessage((DemoRawMessage)message);
+        for (DemoMessageGroup demoMessageGroup : messagesList) {
+            MessageToStore messageToStore = toCradleMessage((DemoRawMessage)demoMessageGroup.getMessages().get(0));
             batch.addMessage(messageToStore);
         }
         return batch;
     }
 
-    private void verifyBatch(List<DemoMessage<?>> messages) {
+    private void verifyBatch(List<DemoMessageGroup> messages) {
         Map<SessionKey, SessionData> localCache = new HashMap<>();
         SessionKey firstSessionKey = null;
         for (int i = 0; i < messages.size(); i++) {
-            DemoMessage<?> demoMessage = messages.get(i);
-            if (!(demoMessage instanceof DemoRawMessage)) {
+            DemoMessageGroup demoMessageGroup = messages.get(i);
+            if (demoMessageGroup.getMessages().size() != 1) {
+                throw new IllegalArgumentException("Demo message group (" + i +
+                        ") contains more than one message: " + demoMessageGroup);
+            }
+            DemoMessage<?> demoMessage = demoMessageGroup.getMessages().get(0);
+            if ( !(demoMessage instanceof DemoRawMessage)) {
                 throw new IllegalArgumentException("Demo message (" + i +
                         ") has incorrect type, expected: " + DemoRawMessage.class.getSimpleName() +
-                        ", actual: " + demoMessage.getClass().getSimpleName());
+                        ", actual: " + demoMessageGroup.getClass().getSimpleName());
             }
-            DemoRawMessage message = (DemoRawMessage) messages.get(i);
+            DemoRawMessage message = (DemoRawMessage) demoMessage;
 
             SessionKey sessionKey = createSessionKey(message);
             if (firstSessionKey == null) {

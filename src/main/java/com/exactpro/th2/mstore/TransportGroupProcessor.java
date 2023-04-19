@@ -1,0 +1,214 @@
+/*
+ * Copyright 2020-2023 Exactpro (Exactpro Systems Limited)
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.exactpro.th2.mstore;
+
+import com.exactpro.cradle.BookId;
+import com.exactpro.cradle.CradleStorage;
+import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.cradle.messages.MessageToStore;
+import com.exactpro.cradle.messages.MessageToStoreBuilder;
+import com.exactpro.cradle.utils.CradleStorageException;
+import com.exactpro.th2.common.schema.message.DeliveryMetadata;
+import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
+import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.SubscriberMonitor;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.*;
+import io.netty.buffer.ByteBuf;
+import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static java.util.Objects.requireNonNull;
+
+public class TransportGroupProcessor extends AbstractMessageProcessor {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TransportGroupProcessor.class);
+    private final MessageRouter<GroupBatch> router;
+    private SubscriberMonitor monitor;
+
+    public TransportGroupProcessor(
+            @NotNull MessageRouter<GroupBatch> router,
+            @NotNull CradleStorage cradleStorage,
+            @NotNull Persistor<GroupedMessageBatchToStore> persistor,
+            @NotNull Configuration configuration,
+            @NotNull Integer prefetchCount
+    ) {
+        super(cradleStorage, persistor, configuration, prefetchCount);
+        this.router = requireNonNull(router, "Message router can't be null");
+    }
+
+    public void start() {
+        if (monitor == null) {
+            monitor = router.subscribeAllWithManualAck(this::process);
+            if (monitor != null) {
+                LOGGER.info("RabbitMQ subscription was successful");
+            } else {
+                LOGGER.error("Can not find queues for subscribe");
+                throw new RuntimeException("Can not find queues for subscriber");
+            }
+        }
+        super.start();
+
+    }
+
+
+    @Override
+    public void close() {
+        if (monitor != null) {
+            try {
+                monitor.unsubscribe();
+            } catch (Exception e) {
+                LOGGER.error("Can not unsubscribe from queues", e);
+            }
+        }
+        super.close();
+    }
+
+
+    void process(DeliveryMetadata deliveryMetadata, GroupBatch messageBatch, Confirmation confirmation) {
+        try {
+            List<MessageGroup> messages = messageBatch.getGroups();
+            if (messages.isEmpty()) {
+                LOGGER.warn("Received empty batch {}", messageBatch);
+                confirm(confirmation);
+                return;
+            }
+
+            if (!deliveryMetadata.isRedelivered()) {
+                verifyBatch(messageBatch);
+            }
+
+            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(messageBatch);
+
+            for (MessageGroup messageGroup : messages) {
+                Message<?> message = messageGroup.getMessages().get(0);
+                SessionKey sessionKey = createSessionKey(messageBatch, message.getId());
+                MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message.getId());
+                sessions.computeIfAbsent(sessionKey, k -> sequenceToTimestamp);
+            }
+
+            if (deliveryMetadata.isRedelivered()) {
+                persist(new ConsolidatedBatch(groupedMessageBatchToStore, confirmation));
+            } else {
+                storeMessages(groupedMessageBatchToStore, confirmation);
+            }
+        } catch (Exception ex) {
+            LOGGER.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
+            reject(confirmation);
+        }
+    }
+
+    protected MessageOrderingProperties extractOrderingProperties(MessageId messageId) {
+        return new MessageOrderingProperties(
+                messageId.getSequence(),
+                messageId.getTimestamp()
+        );
+    }
+
+    private static void confirm(Confirmation confirmation) {
+        try {
+            confirmation.confirm();
+        } catch (Exception e) {
+            LOGGER.error("Exception confirming message", e);
+        }
+    }
+
+
+    private static void reject(Confirmation confirmation) {
+        try {
+            confirmation.reject();
+        } catch (Exception e) {
+            LOGGER.error("Exception rejecting message", e);
+        }
+    }
+
+    private GroupedMessageBatchToStore toCradleBatch(GroupBatch groupBatch) throws CradleStorageException {
+        GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(groupBatch.getSessionGroup());
+        for (MessageGroup messageGroup : groupBatch.getGroups()) {
+            MessageToStore messageToStore = toCradleMessage(groupBatch.getBook(), (RawMessage) messageGroup.getMessages().get(0));
+            batch.addMessage(messageToStore);
+        }
+        return batch;
+    }
+
+    private void verifyBatch(GroupBatch groupBatch) {
+        List<MessageGroup> messages = groupBatch.getGroups();
+        Map<SessionKey, MessageOrderingProperties> localCache = new HashMap<>();
+        for (int i = 0; i < messages.size(); i++) {
+            MessageGroup messageGroup = messages.get(i);
+            if (messageGroup.getMessages().size() != 1) {
+                throw new IllegalArgumentException("transport message group (" + i +
+                        ") contains more than one message: " + messageGroup);
+            }
+            Message<?> message = messageGroup.getMessages().get(0);
+            if ( !(message instanceof RawMessage)) {
+                throw new IllegalArgumentException("Transport message (" + i +
+                        ") has incorrect type, expected: " + RawMessage.class.getSimpleName() +
+                        ", actual: " + messageGroup.getClass().getSimpleName());
+            }
+            SessionKey sessionKey = createSessionKey(groupBatch, message.getId());
+
+            MessageOrderingProperties orderingProperties = extractOrderingProperties(message.getId());
+            MessageOrderingProperties sessionData = localCache.get(sessionKey);
+            if (sessionData == null) {
+                sessionData = sessions.get(sessionKey);
+            }
+            MessageOrderingProperties lastOrderingProperties = sessionData == null
+                    ? loadLastOrderingProperties(sessionKey)
+                    : sessionData;
+
+            verifyOrderingProperties(i, lastOrderingProperties, orderingProperties);
+            localCache.put(sessionKey, orderingProperties);
+        }
+    }
+
+    private SessionKey createSessionKey(GroupBatch batch, MessageId messageId) {
+        return new SessionKey(batch.getBook(),
+                batch.getSessionGroup(),
+                messageId.getSessionAlias(),
+                toCradleDirection(messageId.getDirection()));
+    }
+
+
+    public static com.exactpro.cradle.Direction toCradleDirection(Direction direction) {
+        switch (direction) {
+            case INCOMING: return com.exactpro.cradle.Direction.FIRST;
+            case OUTGOING: return com.exactpro.cradle.Direction.SECOND;
+            default: throw new IllegalStateException("Unknown transport direction " + direction);
+        }
+    }
+
+    private static MessageToStore toCradleMessage(String book, RawMessage rawMessage) throws CradleStorageException {
+        ByteBuf byteBuf = rawMessage.getBody();
+        byte[] body = new byte[byteBuf.readableBytes()];
+        byteBuf.readBytes(body);
+
+        MessageId messageId = rawMessage.getId();
+
+        return new MessageToStoreBuilder()
+                .bookId(new BookId(book))
+                .sessionAlias(messageId.getSessionAlias())
+                .direction(toCradleDirection(messageId.getDirection()))
+                .timestamp(messageId.getTimestamp())
+                .sequence(messageId.getSequence())
+                .protocol(rawMessage.getProtocol())
+                .content(body)
+                .build();
+    }
+}

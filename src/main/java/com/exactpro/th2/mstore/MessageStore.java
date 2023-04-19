@@ -55,23 +55,26 @@ public class MessageStore {
             MessagePersistor persistor = new MessagePersistor(config, storage);
             shutdownManager.registerResource(persistor);
 
-            //FIXME: com.exactpro.th2.common.schema.message.impl.rabbitmq.raw.RabbitRawBatchRouter.buildFromGroupBatch() 6,817 ms (2.8%)
-            // Initialize processor
-            AbstractMessageProcessor processor = config.isUseDemoMode()
-                    ? new DemoMessageProcessor(factory.getDemoMessageBatchRouter(),
-                        storage,
-                        persistor,
-                        config,
-                        factory.getConnectionManagerConfiguration().getPrefetchCount())
-                    : new ProtoMessageProcessor(factory.getMessageRouterRawBatch(),
-                        storage,
-                        persistor,
-                        config,
-                        factory.getConnectionManagerConfiguration().getPrefetchCount());
-            shutdownManager.registerResource(processor);
+            // Initialize processors
+            ProtoRawMessageProcessor protoProcessor = new ProtoRawMessageProcessor(
+                    factory.getMessageRouterRawBatch(),
+                    storage,
+                    persistor,
+                    config,
+                    factory.getConnectionManagerConfiguration().getPrefetchCount());
+            shutdownManager.registerResource(protoProcessor);
+
+            TransportGroupProcessor transportProcessor = new TransportGroupProcessor(
+                    factory.getTransportGroupBatchRouter(),
+                    storage,
+                    persistor,
+                    config,
+                    factory.getConnectionManagerConfiguration().getPrefetchCount());
+            shutdownManager.registerResource(transportProcessor);
 
             persistor.start();
-            processor.start();
+            protoProcessor.start();
+            transportProcessor.start();
 
             READINESS_MONITOR.enable();
             LOGGER.info("mstore started");

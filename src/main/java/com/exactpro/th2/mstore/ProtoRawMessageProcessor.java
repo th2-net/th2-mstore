@@ -21,17 +21,16 @@ import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.MessageToStoreBuilder;
 import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.message.MessageUtils;
+import com.exactpro.th2.common.grpc.ConnectionID;
+import com.exactpro.th2.common.grpc.MessageID;
+import com.exactpro.th2.common.grpc.RawMessage;
+import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.schema.message.DeliveryMetadata;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
 import com.exactpro.th2.common.schema.message.MessageRouter;
+import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
-import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoDirection;
-import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoGroupBatch;
-import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoMessage;
-import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoMessageGroup;
-import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoMessageId;
-import com.exactpro.th2.common.schema.message.impl.rabbitmq.demo.DemoRawMessage;
+import com.google.protobuf.ByteString;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,16 +39,21 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
+import static com.exactpro.th2.common.util.StorageUtils.toInstant;
+import static com.google.protobuf.TextFormat.shortDebugString;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
-public class DemoMessageProcessor extends AbstractMessageProcessor {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DemoMessageProcessor.class);
-    private final MessageRouter<DemoGroupBatch> router;
+public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
+    protected static final String[] ATTRIBUTES = {QueueAttribute.SUBSCRIBE.getValue(), QueueAttribute.RAW.getValue()};
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProtoRawMessageProcessor.class);
+    // FIXME: migrate to the MessageGroupBatch router
+    private final MessageRouter<RawMessageBatch> router;
     private SubscriberMonitor monitor;
 
-    public DemoMessageProcessor(
-            @NotNull MessageRouter<DemoGroupBatch> router,
+    public ProtoRawMessageProcessor(
+            @NotNull MessageRouter<RawMessageBatch> router,
             @NotNull CradleStorage cradleStorage,
             @NotNull Persistor<GroupedMessageBatchToStore> persistor,
             @NotNull Configuration configuration,
@@ -62,7 +66,7 @@ public class DemoMessageProcessor extends AbstractMessageProcessor {
     public void start() {
         if (monitor == null) {
 
-            monitor = router.subscribeAllWithManualAck(this::process, AbstractMessageProcessor.ATTRIBUTES);
+            monitor = router.subscribeAllWithManualAck(this::process, ATTRIBUTES);
             if (monitor != null) {
                 LOGGER.info("RabbitMQ subscription was successful");
             } else {
@@ -71,7 +75,6 @@ public class DemoMessageProcessor extends AbstractMessageProcessor {
             }
         }
         super.start();
-
     }
 
 
@@ -88,11 +91,13 @@ public class DemoMessageProcessor extends AbstractMessageProcessor {
     }
 
 
-    void process(DeliveryMetadata deliveryMetadata, DemoGroupBatch messageBatch, Confirmation confirmation) {
+    void process(DeliveryMetadata deliveryMetadata, RawMessageBatch messageBatch, Confirmation confirmation) {
         try {
-            List<DemoMessageGroup> messages = messageBatch.getGroups();
+            List<RawMessage> messages = messageBatch.getMessagesList();
             if (messages.isEmpty()) {
-                LOGGER.warn("Received empty batch {}", messageBatch);
+                if (LOGGER.isWarnEnabled()) {
+                    LOGGER.warn("Received empty batch {}", shortDebugString(messageBatch));
+                }
                 confirm(confirmation);
                 return;
             }
@@ -101,14 +106,14 @@ public class DemoMessageProcessor extends AbstractMessageProcessor {
                 verifyBatch(messages);
             }
 
-            String group = createSessionKey((DemoRawMessage) messages.get(0).getMessages().get(0)).sessionGroup;
-            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(group, messages);
+            ConnectionID connectionId = messages.get(0).getMetadata().getId().getConnectionId();
+            String sessionGroup = SessionKey.identifySessionGroup(connectionId.getSessionGroup(), connectionId.getSessionAlias());
+            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(sessionGroup, messages);
 
-            for (DemoMessageGroup demoMessageGroup: messages) {
-                DemoRawMessage demoRawMessage = (DemoRawMessage) demoMessageGroup.getMessages().get(0);
-                SessionKey sessionKey = createSessionKey(demoRawMessage);
-                MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(demoRawMessage);
-                sessions.computeIfAbsent(sessionKey, k -> new SessionData(sequenceToTimestamp));
+            for (RawMessage message: messages) {
+                SessionKey sessionKey = createSessionKey(message.getMetadata().getId());
+                MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message.getMetadata().getId());
+                sessions.computeIfAbsent(sessionKey, k -> sequenceToTimestamp);
             }
 
             if (deliveryMetadata.isRedelivered()) {
@@ -122,10 +127,10 @@ public class DemoMessageProcessor extends AbstractMessageProcessor {
         }
     }
 
-    protected MessageOrderingProperties extractOrderingProperties(DemoRawMessage message) {
+    protected MessageOrderingProperties extractOrderingProperties(MessageID messageID) {
         return new MessageOrderingProperties(
-                message.getId().getSequence(),
-                MessageUtils.toTimestamp(message.getId().getTimestamp()) //FIXME: redundant convertation
+                messageID.getSequence(),
+                messageID.getTimestamp()
         );
     }
 
@@ -148,33 +153,22 @@ public class DemoMessageProcessor extends AbstractMessageProcessor {
 
 
     //FIXME: com.exactpro.th2.mstore.MessageProcessor.toCradleBatch() 98,242 ms (40.5%)
-    private GroupedMessageBatchToStore toCradleBatch(String group, List<DemoMessageGroup> messagesList) throws CradleStorageException {
+    private GroupedMessageBatchToStore toCradleBatch(String group, List<RawMessage> messagesList) throws CradleStorageException {
         GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(group);
-        for (DemoMessageGroup demoMessageGroup : messagesList) {
-            MessageToStore messageToStore = toCradleMessage((DemoRawMessage)demoMessageGroup.getMessages().get(0));
+        for (RawMessage message : messagesList) {
+            MessageToStore messageToStore = toCradleMessage(message);
             batch.addMessage(messageToStore);
         }
         return batch;
     }
 
-    private void verifyBatch(List<DemoMessageGroup> messages) {
-        Map<SessionKey, SessionData> localCache = new HashMap<>();
+    private void verifyBatch(List<RawMessage> messages) {
+        Map<SessionKey, MessageOrderingProperties> localCache = new HashMap<>();
         SessionKey firstSessionKey = null;
         for (int i = 0; i < messages.size(); i++) {
-            DemoMessageGroup demoMessageGroup = messages.get(i);
-            if (demoMessageGroup.getMessages().size() != 1) {
-                throw new IllegalArgumentException("Demo message group (" + i +
-                        ") contains more than one message: " + demoMessageGroup);
-            }
-            DemoMessage<?> demoMessage = demoMessageGroup.getMessages().get(0);
-            if ( !(demoMessage instanceof DemoRawMessage)) {
-                throw new IllegalArgumentException("Demo message (" + i +
-                        ") has incorrect type, expected: " + DemoRawMessage.class.getSimpleName() +
-                        ", actual: " + demoMessageGroup.getClass().getSimpleName());
-            }
-            DemoRawMessage message = (DemoRawMessage) demoMessage;
+            RawMessage message = messages.get(i);
 
-            SessionKey sessionKey = createSessionKey(message);
+            SessionKey sessionKey = createSessionKey(message.getMetadata().getId());
             if (firstSessionKey == null) {
                 firstSessionKey = sessionKey;
             }
@@ -189,54 +183,38 @@ public class DemoMessageProcessor extends AbstractMessageProcessor {
                 ));
             }
 
-            MessageOrderingProperties orderingProperties = extractOrderingProperties(message);
-            SessionData sessionData = localCache.get(sessionKey);
+            MessageOrderingProperties orderingProperties = extractOrderingProperties(message.getMetadata().getId());
+            MessageOrderingProperties sessionData = localCache.get(sessionKey);
             if (sessionData == null) {
                 sessionData = sessions.get(sessionKey);
             }
             MessageOrderingProperties lastOrderingProperties = sessionData == null
                     ? loadLastOrderingProperties(sessionKey)
-                    : sessionData.getLastOrderingProperties();
+                    : sessionData;
 
             verifyOrderingProperties(i, lastOrderingProperties, orderingProperties);
-            localCache.put(sessionKey, new SessionData(orderingProperties));
+            localCache.put(sessionKey, orderingProperties);
         }
     }
 
-    private SessionKey createSessionKey(DemoRawMessage message) {
-        DemoMessageId messageId = message.getId();
-        return new SessionKey(messageId.getBook(),
-                messageId.getSessionGroup(),
-                messageId.getSessionAlias(),
+    private SessionKey createSessionKey(MessageID messageId) {
+        return new SessionKey(messageId.getBookName(),
+                messageId.getConnectionId().getSessionGroup(),
+                messageId.getConnectionId().getSessionAlias(),
                 toCradleDirection(messageId.getDirection()));
     }
 
-
-    public static com.exactpro.cradle.Direction toCradleDirection(DemoDirection demoDirection) {
-        switch (demoDirection) {
-            case INCOMING: return com.exactpro.cradle.Direction.FIRST;
-            case OUTGOING: return com.exactpro.cradle.Direction.SECOND;
-            default: throw new IllegalStateException("Unknown demo direction " + demoDirection);
-        }
-    }
-
-    private static MessageToStore toCradleMessage(DemoRawMessage demoRawMessage) throws CradleStorageException {
-        return createMessageToStore(
-                demoRawMessage.getId(),
-                demoRawMessage.getProtocol(),
-                demoRawMessage.getBody()
-        );
-    }
-
-    private static MessageToStore createMessageToStore(DemoMessageId messageId, String protocol, byte[] body) throws CradleStorageException {
+    private static MessageToStore toCradleMessage(RawMessage protoRawMessage) throws CradleStorageException {
+        MessageID messageId = protoRawMessage.getMetadata().getId();
+        ByteString body = protoRawMessage.getBody();
         return new MessageToStoreBuilder()
-                .bookId(new BookId(messageId.getBook()))
-                .sessionAlias(messageId.getSessionAlias())
+                .bookId(new BookId(messageId.getBookName()))
+                .sessionAlias(messageId.getConnectionId().getSessionAlias())
                 .direction(toCradleDirection(messageId.getDirection()))
-                .timestamp(messageId.getTimestamp())
+                .timestamp(toInstant(messageId.getTimestamp()))
                 .sequence(messageId.getSequence())
-                .protocol(protocol)
-                .content(body == null ? new byte[0] : body)
+                .protocol(protoRawMessage.getMetadata().getProtocol())
+                .content(body.isEmpty() ? new byte[0] : body.toByteArray())
                 .build();
     }
 }

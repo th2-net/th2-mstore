@@ -46,7 +46,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-class TestProtoMessageProcessor {
+class TestProtoRawMessageProcessor {
     private static final int DRAIN_TIMEOUT = 1000;
     private static final int TEST_MESSAGE_BATCH_SIZE = 1024;
     private static final int TEST_EVENT_BATCH_SIZE = CradleStorage.DEFAULT_MAX_MESSAGE_BATCH_SIZE;
@@ -56,14 +56,14 @@ class TestProtoMessageProcessor {
     @SuppressWarnings("unchecked")
     private final MessageRouter<RawMessageBatch> routerMock = (MessageRouter<RawMessageBatch>) mock(MessageRouter.class);
 
-    @SuppressWarnings("unchecked")
-    private final Persistor persistor = mock(Persistor.class);
+    @SuppressWarnings("SpellCheckingInspection")
+    private final MessagePersistor persistor = mock(MessagePersistor.class);
     private final DeliveryMetadata deliveryMetadata = new DeliveryMetadata("", false);
     private final ManualAckDeliveryCallback.Confirmation confirmation = mock(ManualAckDeliveryCallback.Confirmation.class);
 
     private final Random random = new Random();
 
-    private ProtoMessageProcessor messageStore;
+    private ProtoRawMessageProcessor messageProcessor;
 
     private CradleEntitiesFactory cradleEntitiesFactory;
 
@@ -72,7 +72,8 @@ class TestProtoMessageProcessor {
     void setUp() throws CradleStorageException, IOException {
         cradleEntitiesFactory = spy(new CradleEntitiesFactory(TEST_MESSAGE_BATCH_SIZE, TEST_EVENT_BATCH_SIZE));
 
-        CassandraCradleResultSet rsMock = mock(CassandraCradleResultSet.class);
+        //noinspection unchecked
+        CassandraCradleResultSet<StoredMessage> rsMock = mock(CassandraCradleResultSet.class);
         when(rsMock.next()).thenReturn(null);
         when(storageMock.getMessages(any())).thenReturn(rsMock);
 
@@ -80,13 +81,13 @@ class TestProtoMessageProcessor {
         when(cradleManagerMock.getStorage()).thenReturn(storageMock);
         when(routerMock.subscribeAllWithManualAck(any(), any(), any())).thenReturn(mock(SubscriberMonitor.class));
         Configuration configuration = Configuration.builder().withDrainInterval(DRAIN_TIMEOUT / 10).build();
-        messageStore = spy(createStore(storageMock, routerMock, persistor, configuration));
-        messageStore.start();
+        messageProcessor = spy(createStore(storageMock, routerMock, persistor, configuration));
+        messageProcessor.start();
     }
 
     @AfterEach
     void tearDown() {
-        messageStore.close();
+        messageProcessor.close();
     }
 
 
@@ -109,8 +110,6 @@ class TestProtoMessageProcessor {
         return "book-name-" + i;
     }
 
-    @SafeVarargs
-    @SuppressWarnings("varargs")
     private RawMessageBatch deliveryOf(RawMessage... messages) {
         return createDelivery(List.of(messages));
     }
@@ -151,32 +150,32 @@ class TestProtoMessageProcessor {
 
         @Test
         @DisplayName("Empty delivery is not stored")
-        void testEmptyDelivery() throws Exception {
-            messageStore.process(deliveryMetadata, deliveryOf(), confirmation);
+        void testEmptyDelivery() {
+            messageProcessor.process(deliveryMetadata, deliveryOf(), confirmation);
             verify(persistor, never()).persist(any(), any());
         }
 
         @Test
         @DisplayName("Delivery with unordered sequences is not stored")
-        void testUnorderedDelivery() throws Exception {
+        void testUnorderedDelivery() {
             String bookName = bookName(random.nextInt());
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("test", "group",  Direction.FIRST, 2, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(second, first), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(second, first), confirmation);
             verify(persistor, never()).persist(any(), any());
         }
 
         @Test
         @DisplayName("Duplicated delivery is ignored")
-        void testDuplicatedDelivery() throws Exception {
+        void testDuplicatedDelivery() {
             String bookName = bookName(random.nextInt());
 
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(first), confirmation);
 
             RawMessage duplicate = createMessage("test", "group", Direction.FIRST, 1, bookName);
-            messageStore.process(deliveryMetadata, deliveryOf(duplicate), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(duplicate), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -199,14 +198,14 @@ class TestProtoMessageProcessor {
 
         @Test
         @DisplayName("Different sessions can have the same sequence")
-        void testDifferentDirectionDelivery() throws Exception {
+        void testDifferentDirectionDelivery() {
             String bookName = bookName(random.nextInt());
 
             RawMessage first = createMessage("testA", "group", Direction.FIRST, 1, bookName);
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(first), confirmation);
 
             RawMessage duplicate = createMessage("testB", "group", Direction.SECOND, 1, bookName);
-            messageStore.process(deliveryMetadata, deliveryOf(duplicate), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(duplicate), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -232,19 +231,19 @@ class TestProtoMessageProcessor {
                     b = true;
                 }
             }
-            assertEquals(true, a);
-            assertEquals(true, b);
+            assertTrue(a);
+            assertTrue(b);
 
             assertAllGroupValuesMatchTo(groupCapture, "group", 4);
         }
 
         @Test
         @DisplayName("Delivery with single message is stored normally")
-        void testSingleMessageDelivery() throws Exception {
+        void testSingleMessageDelivery() {
             String bookName = bookName(random.nextInt());
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(first), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -262,12 +261,12 @@ class TestProtoMessageProcessor {
 
         @Test
         @DisplayName("Delivery with ordered messages for one session are stored")
-        void testNormalDelivery() throws Exception {
+        void testNormalDelivery() {
             String bookName = bookName(random.nextInt());
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("test", "group", Direction.FIRST, 2, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(first, second), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(first, second), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -291,13 +290,13 @@ class TestProtoMessageProcessor {
     class TestSeveralDeliveriesInOneSession {
         @Test
         @DisplayName("Delivery for the same session ara joined to one batch")
-        void joinsBatches() throws Exception {
+        void joinsBatches() {
             String bookName = bookName(random.nextInt());
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("test", "group", Direction.FIRST, 2, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
-            messageStore.process(deliveryMetadata, deliveryOf(second), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(first), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(second), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -322,8 +321,8 @@ class TestProtoMessageProcessor {
             RawMessage secondToProcess = createMessage("test", "group", Direction.FIRST, 2, bookName);
             RawMessage firstToProcess = createMessage("test", "group", Direction.FIRST, 1, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(firstToProcess), confirmation);
-            messageStore.process(deliveryMetadata, deliveryOf(secondToProcess), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(firstToProcess), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(secondToProcess), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
 
@@ -335,23 +334,23 @@ class TestProtoMessageProcessor {
 
     @Test
     @DisplayName("Delivery with different aliases is stored")
-    void testDifferentAliases() throws Exception {
+    void testDifferentAliases() {
         String bookName = bookName(random.nextInt());
         RawMessage first = createMessage("testA", "group", Direction.FIRST, 1, bookName);
         RawMessage second = createMessage("testB", "group", Direction.FIRST, 2, bookName);
 
-        messageStore.process(deliveryMetadata, deliveryOf(first, second), confirmation);
+        messageProcessor.process(deliveryMetadata, deliveryOf(first, second), confirmation);
         verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(any(), any());
     }
 
     @Test
     @DisplayName("Delivery with different directions is stored")
-    void testDifferentDirections() throws Exception {
+    void testDifferentDirections() {
         String bookName = bookName(random.nextInt());
         RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
         RawMessage second = createMessage("test", "group", Direction.SECOND, 2, bookName);
 
-        messageStore.process(deliveryMetadata, deliveryOf(first, second), confirmation);
+        messageProcessor.process(deliveryMetadata, deliveryOf(first, second), confirmation);
         verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(any(), any());
     }
 
@@ -361,13 +360,13 @@ class TestProtoMessageProcessor {
     class TestDeliveriesForDifferentGroups {
         @Test
         @DisplayName("Deliveries for different groups are stored separately")
-        void separateBatches() throws Exception {
+        void separateBatches() {
             String bookName = bookName(random.nextInt());
             RawMessage first = createMessage("testA", "group1", Direction.FIRST, 1, bookName);
             RawMessage second = createMessage("testB", "group2", Direction.FIRST, 2, bookName);
 
-            messageStore.process(deliveryMetadata, deliveryOf(first), confirmation);
-            messageStore.process(deliveryMetadata, deliveryOf(second), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(first), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(second), confirmation);
 
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
@@ -383,8 +382,7 @@ class TestProtoMessageProcessor {
             assertNotNull(groupValues);
             assertEquals(6, groupValues.size());
 
-            for (int i = 0; i < batchValues.size(); i++) {
-                GroupedMessageBatchToStore batch = batchValues.get(i);
+            for (GroupedMessageBatchToStore batch : batchValues) {
                 String group = batch.getGroup();
                 if (group.equals("group1")) {
                     List<StoredMessage> messages = List.copyOf(batch.getMessages());
@@ -400,13 +398,13 @@ class TestProtoMessageProcessor {
         }
     }
 
-    private ProtoMessageProcessor createStore(
+    private ProtoRawMessageProcessor createStore(
             CradleStorage cradleStorageMock,
             MessageRouter<RawMessageBatch> routerMock,
             Persistor<GroupedMessageBatchToStore> persistor,
             Configuration configuration
     ) {
-        return new ProtoMessageProcessor(routerMock, cradleStorageMock, persistor, configuration, 0);
+        return new ProtoRawMessageProcessor(routerMock, cradleStorageMock, persistor, configuration, 0);
     }
 
     private RawMessage createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, String bookName) {

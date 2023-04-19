@@ -7,8 +7,8 @@ plugins {
 }
 
 ext {
-    cradleVersion   = '5.0.0-separate-executor-4540242539-6c92e55-SNAPSHOT'
-    commonVersion   = '5.2.0-separate-executor-4543169567-03a8258-SNAPSHOT'
+    cradleVersion   = '5.1.0-separate-executor-4678409529-5d1e60e-SNAPSHOT'
+    commonVersion   = '5.2.0-separate-executor-4740442036-3398cd8-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -31,7 +31,7 @@ repositories {
         url 'https://s01.oss.sonatype.org/content/repositories/releases/'
     }
 
-    configurations.all {
+    configurations.configureEach {
         resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
         resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
     }
@@ -56,18 +56,26 @@ dependencies {
 
     implementation "com.exactpro.th2:common:$commonVersion"
     implementation 'com.exactpro.th2:task-utils:0.1.1'
+
     implementation 'com.google.protobuf:protobuf-java-util'
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.4'
-    implementation 'io.prometheus:simpleclient:0.9.0'
+
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+
+    implementation 'io.prometheus:simpleclient'
+
     implementation "org.jetbrains:annotations"
+
+    implementation 'io.netty:netty-buffer'
 
     implementation "com.exactpro.th2:cradle-core:$cradleVersion"
     implementation "com.exactpro.th2:cradle-cassandra:$cradleVersion"
-    implementation 'org.apache.commons:commons-lang3:3.12.0'
 
-    implementation "org.slf4j:slf4j-api:1.7.36"
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.4.2'
-    testImplementation 'org.mockito:mockito-junit-jupiter:3.6.0'
+    implementation 'org.apache.commons:commons-lang3'
+
+    implementation "org.slf4j:slf4j-api"
+    testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.3.0'
+    testImplementation 'org.mockito:mockito-core:5.3.0'
 }
 
 test {

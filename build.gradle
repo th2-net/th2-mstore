@@ -7,7 +7,7 @@ plugins {
 }
 
 ext {
-    cradleVersion   = '5.0.1'
+    cradleVersion   = '5.0.1-TH2-4878-allow-future-writes-4753704569-e7a8904-SNAPSHOT'
     commonVersion   = '5.2.0'
 }
 
@@ -48,6 +48,13 @@ jar {
             'Implementation-Vendor-Id': 'com.exactpro',
             'Implementation-Version':   project.version
         )
+    }
+}
+
+configurations.configureEach {
+    resolutionStrategy {
+        force "com.exactpro.th2:cradle-core:$cradleVersion"
+        force "com.exactpro.th2:cradle-cassandra:$cradleVersion"
     }
 }
 

@@ -57,6 +57,7 @@ public class TestMessagePersistor {
     private static final int  MAX_MESSAGE_QUEUE_TASK_SIZE   = 8;
     private static final long MAX_MESSAGE_QUEUE_DATA_SIZE   = 10_000L;
 
+    private static final long STORE_ACTION_REJECTION_THRESHOLD = 30000L;
     private static final BookId BOOK_ID = new BookId("test-book");
 
     private final CradleStorage storageMock = mock(CradleStorage.class);
@@ -68,7 +69,7 @@ public class TestMessagePersistor {
 
     @BeforeEach
     void setUp() throws IOException, InterruptedException, CradleStorageException {
-        cradleObjectsFactory = spy(new CradleEntitiesFactory(MAX_MESSAGE_BATCH_SIZE, MAX_TEST_EVENT_BATCH_SIZE));
+        cradleObjectsFactory = spy(new CradleEntitiesFactory(MAX_MESSAGE_BATCH_SIZE, MAX_TEST_EVENT_BATCH_SIZE, STORE_ACTION_REJECTION_THRESHOLD));
         doReturn(CompletableFuture.completedFuture(null)).when(storageMock).storeGroupedMessageBatchAsync(any());
 
         Configuration config = Configuration.builder()

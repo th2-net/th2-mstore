@@ -19,9 +19,11 @@ import com.exactpro.cradle.BookId;
 import com.exactpro.cradle.CradleEntitiesFactory;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.Direction;
+import com.exactpro.cradle.messages.CradleMessage;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.MessageToStoreBuilder;
+import com.exactpro.cradle.messages.StoredGroupedMessageBatch;
 import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.taskutils.StartableRunnable;
@@ -41,11 +43,21 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.after;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 public class TestMessagePersistor {
+    public static final StoredMessage[] EMPTY_STORED_MESSAGE_ARRAY = new StoredMessage[0];
     private final Logger logger = LoggerFactory.getLogger(TestMessagePersistor.class);
 
     private static final int  MAX_MESSAGE_BATCH_SIZE      = 16 * 1024;
@@ -67,7 +79,7 @@ public class TestMessagePersistor {
     private CradleEntitiesFactory cradleObjectsFactory;
 
     @BeforeEach
-    void setUp() throws IOException, InterruptedException, CradleStorageException {
+    void setUp() throws InterruptedException, CradleStorageException {
         cradleObjectsFactory = spy(new CradleEntitiesFactory(MAX_MESSAGE_BATCH_SIZE, MAX_TEST_EVENT_BATCH_SIZE));
         doReturn(CompletableFuture.completedFuture(null)).when(storageMock).storeGroupedMessageBatchAsync(any());
 
@@ -145,8 +157,9 @@ public class TestMessagePersistor {
     public void testEventResubmittedLimitedTimes() throws Exception {
 
         OngoingStubbing<CompletableFuture<Void>> os = when(storageMock.storeGroupedMessageBatchAsync(any()));
-        for (int i = 0; i <= MAX_MESSAGE_PERSIST_RETRIES; i++)
+        for (int i = 0; i <= MAX_MESSAGE_PERSIST_RETRIES; i++) {
             os = os.thenReturn(CompletableFuture.failedFuture(new IOException("message persistence failure")));
+        }
         os.thenReturn(CompletableFuture.completedFuture(null));
 
         Instant timestamp = Instant.now();
@@ -170,30 +183,32 @@ public class TestMessagePersistor {
 
     @Test
     @DisplayName("Message persistence is queued by count")
-    public void testMessageCountQueueing() throws Exception {
+    public void testMessageCountQueueing() throws CradleStorageException, InterruptedException {
 
         final long storeExecutionTime = MESSAGE_PERSIST_TIMEOUT * 3;
         final long totalExecutionTime = MESSAGE_PERSIST_TIMEOUT * 5;
         final int totalMessages = MAX_MESSAGE_QUEUE_TASK_SIZE + 3;
 
         // create executor with thread pool size > message queue size to avoid free thread waiting
-        final ExecutorService executor = Executors.newFixedThreadPool(MAX_MESSAGE_QUEUE_TASK_SIZE * 2);
+        ExecutorService executor = Executors.newFixedThreadPool(MAX_MESSAGE_QUEUE_TASK_SIZE * 2);
 
         Instant timestamp = Instant.now();
         String group = "test-group";
         GroupedMessageBatchToStore[] batch = new GroupedMessageBatchToStore[totalMessages];
-        for (int i = 0; i < totalMessages; i++)
+        for (int i = 0; i < totalMessages; i++) {
             batch[i] = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST, i, timestamp,
                                                                     "raw message".getBytes()));
+        }
 
         when(storageMock.storeGroupedMessageBatchAsync(any()))
-                .thenAnswer((ignored) ->  CompletableFuture.runAsync(() -> pause(storeExecutionTime), executor));
+                .thenAnswer(ignored ->  CompletableFuture.runAsync(() -> pause(storeExecutionTime), executor));
         // setup producer thread
         StartableRunnable runnable = StartableRunnable.of(() -> {
             try {
-                for (int i = 0; i < totalMessages; i++)
+                for (int i = 0; i < totalMessages; i++) {
                     persistor.persist(batch[i], callback);
-            } catch (Exception e) {
+                }
+            } catch (RuntimeException e) {
                 logger.error("Exception persisting message batch", e);
                 throw new RuntimeException(e);
             }
@@ -217,35 +232,37 @@ public class TestMessagePersistor {
 
     @Test
     @DisplayName("Message persistence is queued by message sizes")
-    public void testMessageSizeQueueing() throws Exception {
+    public void testMessageSizeQueueing() throws CradleStorageException, InterruptedException {
 
         final long storeExecutionTime = MESSAGE_PERSIST_TIMEOUT * 3;
         final long totalExecutionTime = MESSAGE_PERSIST_TIMEOUT * 6;
         final int totalMessages = 5;
-        final int messageCapacityInQueue = 3;
+        final int messageQueueCapacity = 3;
 
         // create executor with thread pool size > event queue size to avoid free thread waiting
-        final ExecutorService executor = Executors.newFixedThreadPool(totalMessages * 2);
+        ExecutorService executor = Executors.newFixedThreadPool(totalMessages * 2);
 
         // create events
-        final int messageContentSize = (int) (MAX_MESSAGE_QUEUE_DATA_SIZE / messageCapacityInQueue * 0.90);
-        final byte[] content = new byte[messageContentSize];
+        final int messageContentSize = (int) (MAX_MESSAGE_QUEUE_DATA_SIZE / messageQueueCapacity * 0.90);
+        byte[] content = new byte[messageContentSize];
 
         Instant timestamp = Instant.now();
         String group = "test-group";
         GroupedMessageBatchToStore[] batch = new GroupedMessageBatchToStore[totalMessages];
-        for (int i = 0; i < totalMessages; i++)
+        for (int i = 0; i < totalMessages; i++) {
             batch[i] = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST, i, timestamp, content));
+        }
 
         when(storageMock.storeGroupedMessageBatchAsync(any()))
-                .thenAnswer((ignored) ->  CompletableFuture.runAsync(() ->  pause(storeExecutionTime), executor));
+                .thenAnswer(ignored ->  CompletableFuture.runAsync(() ->  pause(storeExecutionTime), executor));
 
         // setup producer thread
         StartableRunnable runnable = StartableRunnable.of(() -> {
             try {
-                for (int i = 0; i < totalMessages; i++)
+                for (int i = 0; i < totalMessages; i++) {
                     persistor.persist(batch[i], callback);
-            } catch (Exception e) {
+                }
+            } catch (RuntimeException e) {
                 logger.error("Exception persisting message batch", e);
                 throw new RuntimeException(e);
             }
@@ -255,7 +272,7 @@ public class TestMessagePersistor {
         runnable.awaitReadiness();
         runnable.start();
 
-        verify(storageMock, after(MESSAGE_PERSIST_TIMEOUT).times(messageCapacityInQueue))
+        verify(storageMock, after(MESSAGE_PERSIST_TIMEOUT).times(messageQueueCapacity))
                 .storeGroupedMessageBatchAsync(any());
         verify(storageMock, after(totalExecutionTime).times(totalMessages))
                 .storeGroupedMessageBatchAsync(any());
@@ -276,8 +293,8 @@ public class TestMessagePersistor {
     }
 
 
-    private MessageToStore createMessage(BookId bookId, String session, Direction direction, long sequence, Instant timestamp,
-                                         byte[] content) throws CradleStorageException {
+    private static MessageToStore createMessage(BookId bookId, String session, Direction direction, long sequence, Instant timestamp,
+                                                byte[] content) throws CradleStorageException {
 
         return new MessageToStoreBuilder()
                 .bookId(bookId)
@@ -289,27 +306,29 @@ public class TestMessagePersistor {
     }
 
 
-    private GroupedMessageBatchToStore batchOf(String group, MessageToStore... messages) throws Exception {
+    private GroupedMessageBatchToStore batchOf(String group, MessageToStore... messages) throws CradleStorageException {
         GroupedMessageBatchToStore batch = cradleObjectsFactory.groupedMessageBatch(group);
-        for (MessageToStore message : messages)
+        for (MessageToStore message : messages) {
             batch.addMessage(message);
+        }
         return batch;
     }
 
 
-    private void assertStoredGroupMessageBatch(GroupedMessageBatchToStore expected, GroupedMessageBatchToStore actual) {
+    private static void assertStoredGroupMessageBatch(StoredGroupedMessageBatch expected, StoredGroupedMessageBatch actual) {
         assertEquals(expected.getGroup(), actual.getGroup());
         assertEquals(expected.getMessageCount(), actual.getMessageCount());
         assertEquals(expected.getFirstTimestamp(), actual.getFirstTimestamp());
 
-        StoredMessage[] expectedMessages = expected.getMessages().toArray(new StoredMessage[0]);
-        StoredMessage[] actualMessages = actual.getMessages().toArray(new StoredMessage[0]);
-        for (int i = 0; i < expected.getMessageCount(); i++)
+        StoredMessage[] expectedMessages = expected.getMessages().toArray(EMPTY_STORED_MESSAGE_ARRAY);
+        StoredMessage[] actualMessages = actual.getMessages().toArray(EMPTY_STORED_MESSAGE_ARRAY);
+        for (int i = 0; i < expected.getMessageCount(); i++) {
             assertStoredMessage(expectedMessages[i], actualMessages[i]);
+        }
     }
 
 
-    private void assertStoredMessage(StoredMessage expected, StoredMessage actual) {
+    private static void assertStoredMessage(CradleMessage expected, CradleMessage actual) {
         assertEquals(expected.getId(), actual.getId());
         assertEquals(expected.getSessionAlias(), actual.getSessionAlias());
         assertEquals(expected.getDirection(), actual.getDirection());

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2022 Exactpro (Exactpro Systems Limited)
+ * Copyright 2021-2023 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,31 +20,43 @@ import com.exactpro.cradle.BookId;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.MessageToStoreBuilder;
 import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.grpc.MessageID;
-import com.exactpro.th2.common.grpc.RawMessage;
+import com.exactpro.th2.common.grpc.MessageIDOrBuilder;
+import com.exactpro.th2.common.grpc.RawMessageOrBuilder;
 import com.google.protobuf.ByteString;
+
+import java.util.Map;
 
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 
 public class ProtoUtil {
-    public static MessageToStore toCradleMessage(RawMessage protoRawMessage) throws CradleStorageException {
+    public static final byte[] EMPTY_CONTENT = new byte[0];
+
+    public static MessageToStore toCradleMessage(RawMessageOrBuilder protoRawMessage) throws CradleStorageException {
         return createMessageToStore(
                 protoRawMessage.getMetadata().getId(),
                 protoRawMessage.getMetadata().getProtocol(),
+                protoRawMessage.getMetadata().getPropertiesMap(),
                 protoRawMessage.getBody()
         );
     }
 
-    private static MessageToStore createMessageToStore(MessageID messageId, String protocol, ByteString body) throws CradleStorageException {
-        return new MessageToStoreBuilder()
+    private static MessageToStore createMessageToStore(
+            MessageIDOrBuilder messageId,
+            String protocol,
+            Map<String, String> propertiesMap,
+            ByteString body
+    ) throws CradleStorageException {
+        MessageToStoreBuilder builder = new MessageToStoreBuilder()
                 .bookId(new BookId(messageId.getBookName()))
                 .sessionAlias(messageId.getConnectionId().getSessionAlias())
                 .direction(toCradleDirection(messageId.getDirection()))
                 .timestamp(toInstant(messageId.getTimestamp()))
                 .sequence(messageId.getSequence())
                 .protocol(protocol)
-                .content(body == null ? new byte[0] : body.toByteArray())
-                .build();
+                .content(body == null ? EMPTY_CONTENT : body.toByteArray());
+
+        propertiesMap.forEach(builder::metadata);
+        return builder.build();
     }
 }

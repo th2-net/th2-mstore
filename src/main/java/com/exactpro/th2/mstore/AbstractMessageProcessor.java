@@ -21,13 +21,16 @@ import com.exactpro.cradle.Direction;
 import com.exactpro.cradle.Order;
 import com.exactpro.cradle.filters.FilterForLess;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.cradle.messages.GroupedMessageFilter;
 import com.exactpro.cradle.messages.MessageFilter;
+import com.exactpro.cradle.messages.StoredGroupedMessageBatch;
 import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.cradle.resultset.CradleResultSet;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
 import io.prometheus.client.Histogram;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 import org.jetbrains.annotations.NotNull;
@@ -40,18 +43,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
-public abstract class AbstractMessageProcessor implements AutoCloseable  {
+public abstract class AbstractMessageProcessor implements AutoCloseable {
     private static final Logger logger = LoggerFactory.getLogger(AbstractMessageProcessor.class);
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     protected final Map<SessionKey, MessageOrderingProperties> sessions = new ConcurrentHashMap<>();
+    protected final Map<GroupKey, Instant> groups = new ConcurrentHashMap<>();
     private final Map<String, BatchConsolidator> batchCaches = new ConcurrentHashMap<>();
+
     private final Configuration configuration;
     private volatile ScheduledFuture<?> drainFuture;
     private final Persistor<GroupedMessageBatchToStore> persistor;
@@ -65,8 +74,8 @@ public abstract class AbstractMessageProcessor implements AutoCloseable  {
             @NotNull Integer prefetchCount
     ) {
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
-        this.persistor = Objects.requireNonNull(persistor, "Persistor can't be null");
-        this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
+        this.persistor = requireNonNull(persistor, "Persistor can't be null");
+        this.configuration = requireNonNull(configuration, "'Configuration' parameter");
         this.metrics = new MessageProcessorMetrics();
 
         this.manualDrain = new ManualDrainTrigger(drainExecutor, (int) Math.round(prefetchCount * configuration.getPrefetchRatioToDrain()));
@@ -76,9 +85,9 @@ public abstract class AbstractMessageProcessor implements AutoCloseable  {
         logger.info("Rebatching is {}", (configuration.isRebatching() ? "on" : "off"));
         if (configuration.isRebatching()) {
             drainFuture = drainExecutor.scheduleAtFixedRate(this::scheduledDrain,
-                                                            configuration.getDrainInterval(),
-                                                            configuration.getDrainInterval(),
-                                                            TimeUnit.MILLISECONDS);
+                    configuration.getDrainInterval(),
+                    configuration.getDrainInterval(),
+                    TimeUnit.MILLISECONDS);
             logger.info("Drain scheduler is started");
         }
     }
@@ -214,7 +223,7 @@ public abstract class AbstractMessageProcessor implements AutoCloseable  {
         }
     }
 
-    protected MessageOrderingProperties loadLastOrderingProperties(SessionKey sessionKey){
+    protected MessageOrderingProperties loadLastOrderingProperties(SessionKey sessionKey) {
         long lastMessageSequence;
         Instant lastMessageTimestamp;
         try {
@@ -244,7 +253,37 @@ public abstract class AbstractMessageProcessor implements AutoCloseable  {
         return new MessageOrderingProperties(lastMessageSequence, lastMessageTimestamp);
     }
 
+    public Instant loadLastMessageTimestamp(BookId book, String groupName) {
+        Instant lastMessageTimestamp;
+        try {
+            GroupedMessageFilter filter = new GroupedMessageFilter(book, groupName);
+            filter.setTo(FilterForLess.forLess(Instant.now()));
+            filter.setOrder(Order.REVERSE);
+            filter.setLimit(1);
+            CradleResultSet<StoredGroupedMessageBatch> res = cradleStorage.getGroupedMessageBatches(filter);
+
+            if (res == null) {
+                return Instant.MIN;
+            }
+
+            StoredGroupedMessageBatch batch = res.next();
+
+            if (batch == null) {
+                return Instant.MIN;
+            }
+
+            lastMessageTimestamp = batch.getLastTimestamp();
+        } catch (CradleStorageException | IOException | NoSuchElementException e) {
+            logger.trace("Couldn't get last message timestamp for group {}: {}", groupName, e.getMessage());
+            return Instant.MIN;
+        }
+
+        return lastMessageTimestamp;
+    }
+
+
     private void scheduledDrain() {
+
         logger.trace("Starting scheduled cache drain");
         drain(false);
         logger.trace("Scheduled cache drain ended");
@@ -297,19 +336,16 @@ public abstract class AbstractMessageProcessor implements AutoCloseable  {
         }
     }
 
-    protected static class SessionKey {
-        public final String bookName;
-        public final String sessionGroup;
+    protected static class SessionKey extends GroupKey {
         public final String sessionAlias;
         public final Direction direction;
 
         private final int hashCode;
 
         public SessionKey(String bookName, String sessionGroup, String sessionAlias, Direction direction) {
-            this.bookName = Objects.requireNonNull(bookName, "'Book name' parameter");
-            this.sessionGroup = identifySessionGroup(sessionGroup, sessionAlias);
-            this.sessionAlias = Objects.requireNonNull(sessionAlias, "'Session alias' parameter");
-            this.direction = Objects.requireNonNull(direction, "'Direction' parameter");
+            super(bookName, sessionGroup, sessionAlias);
+            this.sessionAlias = requireNonNull(sessionAlias, "'Session alias' parameter");
+            this.direction = requireNonNull(direction, "'Direction' parameter");
             this.hashCode = Objects.hash(this.sessionAlias, this.sessionGroup, this.direction, this.bookName);
         }
 
@@ -340,9 +376,57 @@ public abstract class AbstractMessageProcessor implements AutoCloseable  {
                     .append("direction", direction)
                     .toString();
         }
+    }
+
+    protected static class GroupKey {
+        public final String bookName;
+        public final String sessionGroup;
+
+        private final int hashCode;
+
+        public GroupKey(String bookName, String sessionGroup) {
+            this.bookName = requireNonBlank(bookName, "'Book name' parameter can not be blank");
+            this.sessionGroup = requireNonBlank(sessionGroup, "'Session group' parameter can not be blank");
+            this.hashCode = Objects.hash(this.bookName, this.sessionGroup);
+        }
+
+        public GroupKey(String bookName, String sessionGroup, String sessionAlias) {
+            this(bookName, identifySessionGroup(sessionGroup, sessionAlias));
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (this == other)
+                return true;
+            if (!(other instanceof GroupKey))
+                return false;
+            GroupKey that = (GroupKey) other;
+            return Objects.equals(sessionGroup, that.sessionGroup) &&
+                    Objects.equals(bookName, that.bookName);
+        }
+
+        @Override
+        public int hashCode() {
+            return hashCode;
+        }
+
+        @Override
+        public String toString() {
+            return new ToStringBuilder(this, ToStringStyle.NO_CLASS_NAME_STYLE)
+                    .append("group", sessionGroup)
+                    .append("bookName", bookName)
+                    .toString();
+        }
+
+        public static String requireNonBlank(String value, String message) {
+            if (StringUtils.isBlank(value)) {
+                throw new IllegalArgumentException(message);
+            }
+            return value;
+        }
 
         public static String identifySessionGroup(String sessionGroup, String sessionAlias) {
-            return (sessionGroup == null || sessionGroup.isEmpty()) ? sessionAlias : sessionGroup;
+            return (sessionGroup == null || sessionGroup.isBlank()) ? requireNonBlank(sessionAlias, "'Session alias' parameter can not be blank") : sessionGroup;
         }
     }
 }

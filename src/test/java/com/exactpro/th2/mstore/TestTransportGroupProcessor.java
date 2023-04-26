@@ -20,6 +20,7 @@ import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.cassandra.resultset.CassandraCradleResultSet;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.schema.message.DeliveryMetadata;
@@ -31,6 +32,7 @@ import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.GroupBatch
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.MessageGroup;
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.MessageId;
 import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.RawMessage;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.TransportUtilsKt;
 import io.netty.buffer.Unpooled;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -43,14 +45,20 @@ import org.mockito.ArgumentCaptor;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.stream.Collectors;
 
 import static com.exactpro.th2.mstore.TransportGroupProcessor.toCradleDirection;
+import static com.exactpro.th2.mstore.TransportGroupProcessor.toCradleMessage;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -99,6 +107,35 @@ class TestTransportGroupProcessor {
         messageStore.start();
     }
 
+    @Test
+    public void testToCradleMessage() throws CradleStorageException {
+        String book = "test-book";
+        RawMessage rawMessage = new RawMessage(
+                new MessageId(
+                        "test-session-alias",
+                        Direction.OUTGOING,
+                        6234L,
+                        Collections.emptyList(),
+                        Instant.now()
+                ),
+                null,
+                Map.of("test-key", "test-value"),
+                "test-protocol",
+                Unpooled.wrappedBuffer(new byte[]{1, 4, 2, 3})
+        );
+
+        MessageToStore cradleMessage = toCradleMessage(book, rawMessage);
+
+        Assertions.assertEquals(rawMessage.getProtocol(), cradleMessage.getProtocol());
+        Assertions.assertEquals(rawMessage.getMetadata(), cradleMessage.getMetadata().toMap());
+        Assertions.assertEquals(rawMessage.getId().getSessionAlias(), cradleMessage.getSessionAlias());
+        Assertions.assertEquals(book, cradleMessage.getBookId().getName());
+        Assertions.assertEquals(toCradleDirection(rawMessage.getId().getDirection()), cradleMessage.getDirection());
+        Assertions.assertEquals(rawMessage.getId().getTimestamp(), cradleMessage.getTimestamp());
+        Assertions.assertEquals(rawMessage.getId().getSequence(), cradleMessage.getSequence());
+        Assertions.assertArrayEquals(TransportUtilsKt.toByteArray(rawMessage.getBody()), cradleMessage.getContent());
+    }
+
     @AfterEach
     void tearDown() {
         messageStore.close();
@@ -128,7 +165,7 @@ class TestTransportGroupProcessor {
     private static void assertAllGroupValuesMatchTo(ArgumentCaptor<String> capture, String value, int count) {
         List<String> values = capture.getAllValues();
         if (count == 0) {
-            if (! (values == null || values.size() == 0))
+            if (!(values == null || values.size() == 0))
                 Assertions.fail("Expecting empty values for groups");
             return;
         }
@@ -209,7 +246,7 @@ class TestTransportGroupProcessor {
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
             verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(batchCapture.capture(), any());
-            int invocations = 2 +  2 /*invocations in SessionBatchHolder (init + reset)*/;
+            int invocations = 2 + 2 /*invocations in SessionBatchHolder (init + reset)*/;
             verify(cradleEntitiesFactory, times(invocations)).groupedMessageBatch(groupCapture.capture());
 
             List<GroupedMessageBatchToStore> value = batchCapture.getAllValues();
@@ -315,7 +352,7 @@ class TestTransportGroupProcessor {
 
         @Test
         @DisplayName("Several deliveries have one session, increasing sequences, but decreasing timestamps")
-        void rejectsDecreasingTimestamps () throws Exception {
+        void rejectsDecreasingTimestamps() throws Exception {
             String bookName = bookName(random.nextInt());
             RawMessage secondToProcess = createMessage("test", Direction.INCOMING, 2);
             RawMessage firstToProcess = createMessage("test", Direction.INCOMING, 1);

@@ -25,16 +25,23 @@ import com.exactpro.th2.common.schema.message.DeliveryMetadata;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
-import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.*;
-import io.netty.buffer.ByteBuf;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.Direction;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.GroupBatch;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.Message;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.MessageGroup;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.MessageId;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.RawMessage;
+import com.exactpro.th2.common.schema.message.impl.rabbitmq.transport.TransportUtilsKt;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
 public class TransportGroupProcessor extends AbstractMessageProcessor {
@@ -90,8 +97,10 @@ public class TransportGroupProcessor extends AbstractMessageProcessor {
                 return;
             }
 
+            GroupKey groupKey = createGroupKey(messageBatch);
+
             if (!deliveryMetadata.isRedelivered()) {
-                verifyBatch(messageBatch);
+                verifyBatch(groupKey, messageBatch);
             }
 
             GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(messageBatch);
@@ -102,6 +111,7 @@ public class TransportGroupProcessor extends AbstractMessageProcessor {
                 MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message.getId());
                 sessions.computeIfAbsent(sessionKey, k -> sequenceToTimestamp);
             }
+            groups.put(groupKey, groupedMessageBatchToStore.getLastTimestamp());
 
             if (deliveryMetadata.isRedelivered()) {
                 persist(new ConsolidatedBatch(groupedMessageBatchToStore, confirmation));
@@ -147,9 +157,16 @@ public class TransportGroupProcessor extends AbstractMessageProcessor {
         return batch;
     }
 
-    private void verifyBatch(GroupBatch groupBatch) {
+    private void verifyBatch(GroupKey groupKey, GroupBatch groupBatch) {
         List<MessageGroup> messages = groupBatch.getGroups();
         Map<SessionKey, MessageOrderingProperties> localCache = new HashMap<>();
+
+        Instant lastGroupTimestamp = groups.get(groupKey);
+        if (lastGroupTimestamp == null) {
+            var bookId = new BookId(groupKey.bookName);
+            lastGroupTimestamp = loadLastMessageTimestamp(bookId, groupKey.sessionGroup);
+        }
+
         for (int i = 0; i < messages.size(); i++) {
             MessageGroup messageGroup = messages.get(i);
             if (messageGroup.getMessages().size() != 1) {
@@ -157,10 +174,19 @@ public class TransportGroupProcessor extends AbstractMessageProcessor {
                         ") contains more than one message: " + messageGroup);
             }
             Message<?> message = messageGroup.getMessages().get(0);
-            if ( !(message instanceof RawMessage)) {
+            if (!(message instanceof RawMessage)) {
                 throw new IllegalArgumentException("Transport message (" + i +
                         ") has incorrect type, expected: " + RawMessage.class.getSimpleName() +
                         ", actual: " + messageGroup.getClass().getSimpleName());
+            }
+            Instant messageTimestamp = message.getId().getTimestamp();
+            if (lastGroupTimestamp.isAfter(messageTimestamp)) {
+                throw new IllegalArgumentException(format(
+                        "Received grouped batch `%s` containing message with timestamp %s, but previously was %s",
+                        groupKey.sessionGroup,
+                        messageTimestamp,
+                        lastGroupTimestamp
+                ));
             }
             SessionKey sessionKey = createSessionKey(groupBatch, message.getId());
 
@@ -185,30 +211,35 @@ public class TransportGroupProcessor extends AbstractMessageProcessor {
                 toCradleDirection(messageId.getDirection()));
     }
 
+    private GroupKey createGroupKey(GroupBatch batch) {
+        return new GroupKey(batch.getBook(),
+                batch.getSessionGroup());
+    }
 
     public static com.exactpro.cradle.Direction toCradleDirection(Direction direction) {
         switch (direction) {
-            case INCOMING: return com.exactpro.cradle.Direction.FIRST;
-            case OUTGOING: return com.exactpro.cradle.Direction.SECOND;
-            default: throw new IllegalStateException("Unknown transport direction " + direction);
+            case INCOMING:
+                return com.exactpro.cradle.Direction.FIRST;
+            case OUTGOING:
+                return com.exactpro.cradle.Direction.SECOND;
+            default:
+                throw new IllegalStateException("Unknown transport direction " + direction);
         }
     }
 
-    private static MessageToStore toCradleMessage(String book, RawMessage rawMessage) throws CradleStorageException {
-        ByteBuf byteBuf = rawMessage.getBody();
-        byte[] body = new byte[byteBuf.readableBytes()];
-        byteBuf.readBytes(body);
-
+    public static MessageToStore toCradleMessage(String book, RawMessage rawMessage) throws CradleStorageException {
         MessageId messageId = rawMessage.getId();
 
-        return new MessageToStoreBuilder()
+        MessageToStoreBuilder builder = new MessageToStoreBuilder()
                 .bookId(new BookId(book))
                 .sessionAlias(messageId.getSessionAlias())
                 .direction(toCradleDirection(messageId.getDirection()))
                 .timestamp(messageId.getTimestamp())
                 .sequence(messageId.getSequence())
                 .protocol(rawMessage.getProtocol())
-                .content(body)
-                .build();
+                .content(TransportUtilsKt.toByteArray(rawMessage.getBody()));
+
+        rawMessage.getMetadata().forEach(builder::metadata);
+        return builder.build();
     }
 }

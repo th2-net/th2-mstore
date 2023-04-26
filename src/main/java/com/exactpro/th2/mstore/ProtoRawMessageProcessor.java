@@ -21,7 +21,6 @@ import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
 import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.MessageToStoreBuilder;
 import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.grpc.ConnectionID;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
@@ -31,14 +30,17 @@ import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.google.protobuf.ByteString;
+import com.google.protobuf.Timestamp;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static com.exactpro.th2.common.message.MessageUtils.toJson;
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static com.exactpro.th2.common.util.StorageUtils.toInstant;
 import static com.google.protobuf.TextFormat.shortDebugString;
@@ -47,6 +49,7 @@ import static java.util.Objects.requireNonNull;
 
 public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
     protected static final String[] ATTRIBUTES = {QueueAttribute.SUBSCRIBE.getValue(), QueueAttribute.RAW.getValue()};
+    private static final byte[] EMPTY_CONTENT = new byte[0];
     private static final Logger LOGGER = LoggerFactory.getLogger(ProtoRawMessageProcessor.class);
     // FIXME: migrate to the MessageGroupBatch router
     private final MessageRouter<RawMessageBatch> router;
@@ -102,19 +105,21 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
                 return;
             }
 
+            MessageID firstMessageId = messages.get(0).getMetadata().getId();
+            GroupKey groupKey = createGroupKey(firstMessageId);
+
             if (!deliveryMetadata.isRedelivered()) {
-                verifyBatch(messages);
+                verifyBatch(groupKey, messages);
             }
 
-            ConnectionID connectionId = messages.get(0).getMetadata().getId().getConnectionId();
-            String sessionGroup = SessionKey.identifySessionGroup(connectionId.getSessionGroup(), connectionId.getSessionAlias());
-            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(sessionGroup, messages);
+            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(groupKey.sessionGroup, messages);
 
-            for (RawMessage message: messages) {
+            for (RawMessage message : messages) {
                 SessionKey sessionKey = createSessionKey(message.getMetadata().getId());
                 MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message.getMetadata().getId());
                 sessions.computeIfAbsent(sessionKey, k -> sequenceToTimestamp);
             }
+            groups.put(groupKey, groupedMessageBatchToStore.getLastTimestamp());
 
             if (deliveryMetadata.isRedelivered()) {
                 persist(new ConsolidatedBatch(groupedMessageBatchToStore, confirmation));
@@ -162,18 +167,34 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
         return batch;
     }
 
-    private void verifyBatch(List<RawMessage> messages) {
+    private void verifyBatch(GroupKey groupKey, List<RawMessage> messages) {
         Map<SessionKey, MessageOrderingProperties> localCache = new HashMap<>();
         SessionKey firstSessionKey = null;
+
+        Instant lastGroupTimestamp = groups.get(groupKey);
+        if (lastGroupTimestamp == null) {
+            var bookId = new BookId(groupKey.bookName);
+            lastGroupTimestamp = loadLastMessageTimestamp(bookId, groupKey.sessionGroup);
+        }
+
         for (int i = 0; i < messages.size(); i++) {
             RawMessage message = messages.get(i);
 
+            Timestamp messageTimestamp = message.getMetadata().getId().getTimestamp();
+            if (compare(lastGroupTimestamp, messageTimestamp) > 0) {
+                throw new IllegalArgumentException(format(
+                        "Received grouped batch `%s` containing message with timestamp %s, but previously was %s",
+                        groupKey.sessionGroup,
+                        toJson(messageTimestamp),
+                        lastGroupTimestamp
+                ));
+            }
             SessionKey sessionKey = createSessionKey(message.getMetadata().getId());
             if (firstSessionKey == null) {
                 firstSessionKey = sessionKey;
             }
 
-            if(!firstSessionKey.sessionGroup.equals(sessionKey.sessionGroup)){
+            if (!firstSessionKey.sessionGroup.equals(sessionKey.sessionGroup)) {
                 throw new IllegalArgumentException(format(
                         "Delivery contains different session groups. Message [%d] - sequence %s; Message [%d] - sequence %s",
                         i - 1,
@@ -204,17 +225,30 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
                 toCradleDirection(messageId.getDirection()));
     }
 
-    private static MessageToStore toCradleMessage(RawMessage protoRawMessage) throws CradleStorageException {
+    private GroupKey createGroupKey(MessageID messageId) {
+        return new GroupKey(messageId.getBookName(),
+                messageId.getConnectionId().getSessionGroup(),
+                messageId.getConnectionId().getSessionAlias());
+    }
+
+    public static MessageToStore toCradleMessage(RawMessage protoRawMessage) throws CradleStorageException {
         MessageID messageId = protoRawMessage.getMetadata().getId();
         ByteString body = protoRawMessage.getBody();
-        return new MessageToStoreBuilder()
+        MessageToStoreBuilder builder = new MessageToStoreBuilder()
                 .bookId(new BookId(messageId.getBookName()))
                 .sessionAlias(messageId.getConnectionId().getSessionAlias())
                 .direction(toCradleDirection(messageId.getDirection()))
                 .timestamp(toInstant(messageId.getTimestamp()))
                 .sequence(messageId.getSequence())
                 .protocol(protoRawMessage.getMetadata().getProtocol())
-                .content(body.isEmpty() ? new byte[0] : body.toByteArray())
-                .build();
+                .content(body == null ? EMPTY_CONTENT : body.toByteArray());
+
+        protoRawMessage.getMetadata().getPropertiesMap().forEach(builder::metadata);
+        return builder.build();
+    }
+
+    private static int compare(Instant instant, Timestamp timestamp) {
+        int compareResult = Long.compare(instant.getEpochSecond(), timestamp.getSeconds());
+        return compareResult == 0 ? Integer.compare(instant.getNano(), timestamp.getNanos()) : compareResult;
     }
 }

@@ -7,8 +7,8 @@ plugins {
 }
 
 ext {
-    cradleVersion   = '5.1.0-separate-executor-4678409529-5d1e60e-SNAPSHOT'
-    commonVersion   = '5.2.0-separate-executor-4740442036-3398cd8-SNAPSHOT'
+    cradleVersion = '5.1.0-separate-executor-4783246997-dda4d35-SNAPSHOT'
+    commonVersion = '5.2.0-separate-executor-4807123825-9449978-SNAPSHOT'
 }
 
 group = 'com.exactpro.th2'
@@ -20,7 +20,7 @@ targetCompatibility = 11
 
 repositories {
     mavenCentral()
-    
+
     maven {
         name 'Sonatype_snapshots'
         url 'https://s01.oss.sonatype.org/content/repositories/snapshots/'
@@ -40,13 +40,13 @@ repositories {
 jar {
     manifest {
         attributes(
-            'Created-By':               "${System.getProperty('java.version')} (${System.getProperty('java.vendor')})",
-            'Specification-Title':      '',
-            'Specification-Vendor':     'Exactpro Systems LLC',
-            'Implementation-Title':     project.archivesBaseName,
-            'Implementation-Vendor':    'Exactpro Systems LLC',
-            'Implementation-Vendor-Id': 'com.exactpro',
-            'Implementation-Version':   project.version
+                'Created-By': "${System.getProperty('java.version')} (${System.getProperty('java.vendor')})",
+                'Specification-Title': '',
+                'Specification-Vendor': 'Exactpro Systems LLC',
+                'Implementation-Title': project.archivesBaseName,
+                'Implementation-Vendor': 'Exactpro Systems LLC',
+                'Implementation-Vendor-Id': 'com.exactpro',
+                'Implementation-Version': project.version
         )
     }
 }
@@ -62,7 +62,6 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind'
 
     implementation 'io.prometheus:simpleclient'
-
     implementation "org.jetbrains:annotations"
 
     implementation 'io.netty:netty-buffer'
@@ -105,8 +104,8 @@ docker {
 
 
 dependencyCheck {
-    formats=['SARIF', 'JSON', 'HTML']
-    failBuildOnCVSS=5
+    formats = ['SARIF', 'JSON', 'HTML']
+    failBuildOnCVSS = 5
 
     analyzers {
         assemblyEnabled = false

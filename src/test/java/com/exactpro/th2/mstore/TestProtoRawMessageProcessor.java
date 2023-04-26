@@ -20,18 +20,31 @@ import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.cassandra.resultset.CassandraCradleResultSet;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.cradle.messages.MessageToStore;
 import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.grpc.*;
+import com.exactpro.th2.common.grpc.ConnectionID;
+import com.exactpro.th2.common.grpc.Direction;
+import com.exactpro.th2.common.grpc.MessageID;
+import com.exactpro.th2.common.grpc.RawMessage;
+import com.exactpro.th2.common.grpc.RawMessageBatch;
+import com.exactpro.th2.common.grpc.RawMessageMetadata;
+import com.exactpro.th2.common.message.MessageUtils;
 import com.exactpro.th2.common.schema.message.DeliveryMetadata;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
+import com.exactpro.th2.common.util.StorageUtils;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.TimestampOrBuilder;
 import org.jetbrains.annotations.NotNull;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.io.IOException;
@@ -42,9 +55,20 @@ import java.util.Random;
 
 import static com.exactpro.th2.common.event.EventUtils.toTimestamp;
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
-import static org.junit.jupiter.api.Assertions.*;
+import static com.exactpro.th2.mstore.ProtoRawMessageProcessor.toCradleMessage;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TestProtoRawMessageProcessor {
     private static final int DRAIN_TIMEOUT = 1000;
@@ -83,6 +107,38 @@ class TestProtoRawMessageProcessor {
         Configuration configuration = Configuration.builder().withDrainInterval(DRAIN_TIMEOUT / 10).build();
         messageProcessor = spy(createStore(storageMock, routerMock, persistor, configuration));
         messageProcessor.start();
+    }
+
+    @Test
+    public void testToCradleMessage() throws CradleStorageException {
+        RawMessage rawMessage = RawMessage.newBuilder()
+                .setMetadata(RawMessageMetadata.newBuilder()
+                        .setProtocol("test-protocol")
+                        .putProperties("test-key", "test-value")
+                        .setId(MessageID.newBuilder()
+                                .setConnectionId(ConnectionID.newBuilder()
+//                                        .setSessionGroup("test-session-group") // this paremter isn't present in MessageToStore
+                                        .setSessionAlias("test-session-alias")
+                                        .build())
+                                .setBookName("test-book")
+                                .setTimestamp(MessageUtils.toTimestamp(Instant.now()))
+                                .setDirection(Direction.SECOND)
+                                .setSequence(6234)
+                                .build())
+                        .build())
+                .setBody(ByteString.copyFrom(new byte[]{1, 4, 2, 3}))
+                .build();
+
+        MessageToStore cradleMessage = toCradleMessage(rawMessage);
+
+        Assertions.assertEquals(rawMessage.getMetadata().getProtocol(), cradleMessage.getProtocol());
+        Assertions.assertEquals(rawMessage.getMetadata().getPropertiesMap(), cradleMessage.getMetadata().toMap());
+        Assertions.assertEquals(rawMessage.getMetadata().getId().getConnectionId().getSessionAlias(), cradleMessage.getSessionAlias());
+        Assertions.assertEquals(rawMessage.getMetadata().getId().getBookName(), cradleMessage.getBookId().getName());
+        Assertions.assertEquals(StorageUtils.toCradleDirection(rawMessage.getMetadata().getId().getDirection()), cradleMessage.getDirection());
+        Assertions.assertEquals(StorageUtils.toInstant(rawMessage.getMetadata().getId().getTimestamp()), cradleMessage.getTimestamp());
+        Assertions.assertEquals(rawMessage.getMetadata().getId().getSequence(), cradleMessage.getSequence());
+        Assertions.assertArrayEquals(rawMessage.getBody().toByteArray(), cradleMessage.getContent());
     }
 
     @AfterEach
@@ -129,7 +185,7 @@ class TestProtoRawMessageProcessor {
     private static void assertAllGroupValuesMatchTo(ArgumentCaptor<String> capture, String value, int count) {
         List<String> values = capture.getAllValues();
         if (count == 0) {
-            if (! (values == null || values.size() == 0))
+            if (!(values == null || values.size() == 0))
                 Assertions.fail("Expecting empty values for groups");
             return;
         }
@@ -160,7 +216,7 @@ class TestProtoRawMessageProcessor {
         void testUnorderedDelivery() {
             String bookName = bookName(random.nextInt());
             RawMessage first = createMessage("test", "group", Direction.FIRST, 1, bookName);
-            RawMessage second = createMessage("test", "group",  Direction.FIRST, 2, bookName);
+            RawMessage second = createMessage("test", "group", Direction.FIRST, 2, bookName);
 
             messageProcessor.process(deliveryMetadata, deliveryOf(second, first), confirmation);
             verify(persistor, never()).persist(any(), any());
@@ -210,7 +266,7 @@ class TestProtoRawMessageProcessor {
             ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
             ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
             verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(batchCapture.capture(), any());
-            int invocations = 2 +  2 /*invocations in SessionBatchHolder (init + reset)*/;
+            int invocations = 2 + 2 /*invocations in SessionBatchHolder (init + reset)*/;
             verify(cradleEntitiesFactory, times(invocations)).groupedMessageBatch(groupCapture.capture());
 
             List<GroupedMessageBatchToStore> value = batchCapture.getAllValues();
@@ -316,7 +372,7 @@ class TestProtoRawMessageProcessor {
 
         @Test
         @DisplayName("Several deliveries have one session, increasing sequences, but decreasing timestamps")
-        void rejectsDecreasingTimestamps () throws Exception {
+        void rejectsDecreasingTimestamps() throws Exception {
             String bookName = bookName(random.nextInt());
             RawMessage secondToProcess = createMessage("test", "group", Direction.FIRST, 2, bookName);
             RawMessage firstToProcess = createMessage("test", "group", Direction.FIRST, 1, bookName);
@@ -329,6 +385,54 @@ class TestProtoRawMessageProcessor {
             verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(batchCapture.capture(), any());
             verify(confirmation, timeout(DRAIN_TIMEOUT).times(1)).reject();
 
+        }
+
+        @Test
+        @DisplayName("batch with older message is not stored. case 1")
+        void rejectsDecreasingGroup1() throws Exception {
+
+            Instant last = Instant.parse("2023-01-01T00:00:00Z");
+
+            doReturn(last).when(messageProcessor).loadLastMessageTimestamp(any(), any());
+
+
+            String bookName = bookName(random.nextInt());
+
+            RawMessage b1m1 = createMessage("test1", "group", Direction.FIRST, 1, last.plusMillis(10), bookName);
+            RawMessage b1m2 = createMessage("test2", "group", Direction.FIRST, 2, last.minusMillis(20), bookName);
+
+            messageProcessor.process(deliveryMetadata, deliveryOf(b1m1, b1m2), confirmation);
+
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
+
+            verify(persistor, timeout(DRAIN_TIMEOUT).times(0)).persist(batchCapture.capture(), any());
+            verify(confirmation, timeout(DRAIN_TIMEOUT).times(1)).reject();
+        }
+
+        @Test
+        @DisplayName("batch with older message is not stored. case 2")
+        void rejectsDecreasingGroup2() throws Exception {
+
+            Instant last = Instant.parse("2023-01-01T00:00:00Z");
+
+            doReturn(last).when(messageProcessor).loadLastMessageTimestamp(any(), any());
+
+
+            String bookName = bookName(random.nextInt());
+
+            RawMessage b1m1 = createMessage("test1", "group", Direction.FIRST, 1, last.plusMillis(10), bookName);
+            RawMessage b1m2 = createMessage("test2", "group", Direction.FIRST, 2, last.plusMillis(20), bookName);
+
+            RawMessage b2m1 = createMessage("test1", "group", Direction.FIRST, 1, last.plusMillis(30), bookName);
+            RawMessage b2m2 = createMessage("test4", "group", Direction.FIRST, 2, last.plusMillis(10), bookName);
+
+            messageProcessor.process(deliveryMetadata, deliveryOf(b1m1, b1m2), confirmation);
+            messageProcessor.process(deliveryMetadata, deliveryOf(b2m1, b2m2), confirmation);
+
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
+
+            verify(persistor, timeout(DRAIN_TIMEOUT).times(1)).persist(batchCapture.capture(), any());
+            verify(confirmation, timeout(DRAIN_TIMEOUT).times(1)).reject();
         }
     }
 
@@ -412,6 +516,16 @@ class TestProtoRawMessageProcessor {
                 .setMetadata(
                         RawMessageMetadata.newBuilder()
                                 .setId(createMessageId(Instant.now(), sessionAlias, sessionGroup, direction, sequence, bookName))
+                                .build()
+                ).setBody(ByteString.copyFrom("test".getBytes(StandardCharsets.UTF_8)))
+                .build();
+    }
+
+    private RawMessage createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, Instant timestamp, String bookName) {
+        return RawMessage.newBuilder()
+                .setMetadata(
+                        RawMessageMetadata.newBuilder()
+                                .setId(createMessageId(timestamp, sessionAlias, sessionGroup, direction, sequence, bookName))
                                 .build()
                 ).setBody(ByteString.copyFrom("test".getBytes(StandardCharsets.UTF_8)))
                 .build();

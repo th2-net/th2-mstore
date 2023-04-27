@@ -16,6 +16,7 @@
 package com.exactpro.th2.mstore;
 
 import com.exactpro.cradle.BookId;
+import com.exactpro.cradle.CoreStorageSettings;
 import com.exactpro.cradle.CradleEntitiesFactory;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.Direction;
@@ -60,14 +61,14 @@ public class TestMessagePersistor {
     public static final StoredMessage[] EMPTY_STORED_MESSAGE_ARRAY = new StoredMessage[0];
     private final Logger logger = LoggerFactory.getLogger(TestMessagePersistor.class);
 
-    private static final int  MAX_MESSAGE_BATCH_SIZE      = 16 * 1024;
-    private static final int  MAX_TEST_EVENT_BATCH_SIZE   = 16 * 1024;
+    private static final int MAX_MESSAGE_BATCH_SIZE = 16 * 1024;
+    private static final int MAX_TEST_EVENT_BATCH_SIZE = 16 * 1024;
 
-    private static final long MESSAGE_PERSIST_TIMEOUT       = 100;
+    private static final long MESSAGE_PERSIST_TIMEOUT = 100;
 
-    private static final int  MAX_MESSAGE_PERSIST_RETRIES   = 2;
-    private static final int  MAX_MESSAGE_QUEUE_TASK_SIZE   = 8;
-    private static final long MAX_MESSAGE_QUEUE_DATA_SIZE   = 10_000L;
+    private static final int MAX_MESSAGE_PERSIST_RETRIES = 2;
+    private static final int MAX_MESSAGE_QUEUE_TASK_SIZE = 8;
+    private static final long MAX_MESSAGE_QUEUE_DATA_SIZE = 10_000L;
 
     private static final BookId BOOK_ID = new BookId("test-book");
 
@@ -80,15 +81,19 @@ public class TestMessagePersistor {
 
     @BeforeEach
     void setUp() throws InterruptedException, CradleStorageException {
-        cradleObjectsFactory = spy(new CradleEntitiesFactory(MAX_MESSAGE_BATCH_SIZE, MAX_TEST_EVENT_BATCH_SIZE));
+        cradleObjectsFactory = spy(new CradleEntitiesFactory(
+                MAX_MESSAGE_BATCH_SIZE,
+                MAX_TEST_EVENT_BATCH_SIZE,
+                new CoreStorageSettings().calculateStoreActionRejectionThreshold()
+        ));
         doReturn(CompletableFuture.completedFuture(null)).when(storageMock).storeGroupedMessageBatchAsync(any());
 
         Configuration config = Configuration.builder()
-                                            .withMaxTaskCount(MAX_MESSAGE_QUEUE_TASK_SIZE)
-                                            .withMaxRetryCount(MAX_MESSAGE_PERSIST_RETRIES)
-                                            .withRetryDelayBase(10L)
-                                            .withMaxTaskDataSize(MAX_MESSAGE_QUEUE_DATA_SIZE)
-                                            .build();
+                .withMaxTaskCount(MAX_MESSAGE_QUEUE_TASK_SIZE)
+                .withMaxRetryCount(MAX_MESSAGE_PERSIST_RETRIES)
+                .withRetryDelayBase(10L)
+                .withMaxTaskDataSize(MAX_MESSAGE_QUEUE_DATA_SIZE)
+                .build();
         persistor = spy(new MessagePersistor(config, storageMock));
         persistor.start();
     }
@@ -107,8 +112,8 @@ public class TestMessagePersistor {
 
         Instant timestamp = Instant.now();
         String group = "test-group";
-        GroupedMessageBatchToStore batch = batchOf(group, createMessage(BOOK_ID,"test-session", Direction.FIRST,
-                                                                12, timestamp, "raw message".getBytes()));
+        GroupedMessageBatchToStore batch = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST,
+                12, timestamp, "raw message".getBytes()));
 
         persistor.persist(batch, callback);
         pause(MESSAGE_PERSIST_TIMEOUT);
@@ -136,7 +141,7 @@ public class TestMessagePersistor {
         Instant timestamp = Instant.now();
         String group = "test-group";
         GroupedMessageBatchToStore batch = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST,
-                                                                    12, timestamp, "raw message".getBytes()));
+                12, timestamp, "raw message".getBytes()));
         persistor.persist(batch, callback);
         pause(MESSAGE_PERSIST_TIMEOUT * 2);
 
@@ -165,7 +170,7 @@ public class TestMessagePersistor {
         Instant timestamp = Instant.now();
         String group = "test-group";
         GroupedMessageBatchToStore batch = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST, 12,
-                                                                            timestamp, "raw message".getBytes()));
+                timestamp, "raw message".getBytes()));
         persistor.persist(batch, callback);
         pause(MESSAGE_PERSIST_TIMEOUT * (MAX_MESSAGE_PERSIST_RETRIES + 1));
 
@@ -197,11 +202,11 @@ public class TestMessagePersistor {
         GroupedMessageBatchToStore[] batch = new GroupedMessageBatchToStore[totalMessages];
         for (int i = 0; i < totalMessages; i++) {
             batch[i] = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST, i, timestamp,
-                                                                    "raw message".getBytes()));
+                    "raw message".getBytes()));
         }
 
         when(storageMock.storeGroupedMessageBatchAsync(any()))
-                .thenAnswer(ignored ->  CompletableFuture.runAsync(() -> pause(storeExecutionTime), executor));
+                .thenAnswer(ignored -> CompletableFuture.runAsync(() -> pause(storeExecutionTime), executor));
         // setup producer thread
         StartableRunnable runnable = StartableRunnable.of(() -> {
             try {
@@ -254,7 +259,7 @@ public class TestMessagePersistor {
         }
 
         when(storageMock.storeGroupedMessageBatchAsync(any()))
-                .thenAnswer(ignored ->  CompletableFuture.runAsync(() ->  pause(storeExecutionTime), executor));
+                .thenAnswer(ignored -> CompletableFuture.runAsync(() -> pause(storeExecutionTime), executor));
 
         // setup producer thread
         StartableRunnable runnable = StartableRunnable.of(() -> {
@@ -293,8 +298,14 @@ public class TestMessagePersistor {
     }
 
 
-    private static MessageToStore createMessage(BookId bookId, String session, Direction direction, long sequence, Instant timestamp,
-                                                byte[] content) throws CradleStorageException {
+    private static MessageToStore createMessage(
+            BookId bookId,
+            String session,
+            Direction direction,
+            long sequence,
+            Instant timestamp,
+            byte[] content
+    ) throws CradleStorageException {
 
         return new MessageToStoreBuilder()
                 .bookId(bookId)

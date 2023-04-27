@@ -15,6 +15,7 @@
 
 package com.exactpro.th2.mstore;
 
+import com.exactpro.cradle.CoreStorageSettings;
 import com.exactpro.cradle.CradleEntitiesFactory;
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
@@ -94,7 +95,11 @@ class TestProtoRawMessageProcessor {
 
     @BeforeEach
     void setUp() throws CradleStorageException, IOException {
-        cradleEntitiesFactory = spy(new CradleEntitiesFactory(TEST_MESSAGE_BATCH_SIZE, TEST_EVENT_BATCH_SIZE));
+        cradleEntitiesFactory = spy(new CradleEntitiesFactory(
+                TEST_MESSAGE_BATCH_SIZE,
+                TEST_EVENT_BATCH_SIZE,
+                new CoreStorageSettings().calculateStoreActionRejectionThreshold()
+        ));
 
         //noinspection unchecked
         CassandraCradleResultSet<StoredMessage> rsMock = mock(CassandraCradleResultSet.class);

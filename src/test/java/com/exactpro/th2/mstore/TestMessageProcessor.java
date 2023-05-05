@@ -51,6 +51,7 @@ class TestMessageProcessor {
     private static final int TEST_MESSAGE_BATCH_SIZE = 1024;
     private static final int TEST_EVENT_BATCH_SIZE = CradleStorage.DEFAULT_MAX_MESSAGE_BATCH_SIZE;
 
+    private static final long STORE_ACTION_REJECTION_THRESHOLD = 30000L;
     private final CradleManager cradleManagerMock = mock(CradleManager.class);
     private final CradleStorage storageMock = mock(CradleStorage.class);
     @SuppressWarnings("unchecked")
@@ -70,7 +71,7 @@ class TestMessageProcessor {
 
     @BeforeEach
     void setUp() throws CradleStorageException, IOException {
-        cradleEntitiesFactory = spy(new CradleEntitiesFactory(TEST_MESSAGE_BATCH_SIZE, TEST_EVENT_BATCH_SIZE));
+        cradleEntitiesFactory = spy(new CradleEntitiesFactory(TEST_MESSAGE_BATCH_SIZE, TEST_EVENT_BATCH_SIZE, STORE_ACTION_REJECTION_THRESHOLD));
 
         CassandraCradleResultSet rsMock = mock(CassandraCradleResultSet.class);
         when(rsMock.next()).thenReturn(null);
@@ -320,6 +321,7 @@ class TestMessageProcessor {
         void rejectsDecreasingTimestamps () throws Exception {
             String bookName = bookName(random.nextInt());
             RawMessage secondToProcess = createMessage("test", "group", Direction.FIRST, 2, bookName);
+            Thread.sleep(1);
             RawMessage firstToProcess = createMessage("test", "group", Direction.FIRST, 1, bookName);
 
             processor.process(deliveryMetadata, deliveryOf(firstToProcess), confirmation);

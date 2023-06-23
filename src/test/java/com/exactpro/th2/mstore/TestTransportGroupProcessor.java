@@ -120,9 +120,9 @@ class TestTransportGroupProcessor {
                         "test-session-alias",
                         Direction.OUTGOING,
                         6234L,
-                        Collections.emptyList(),
-                        Instant.now()
-                ),
+                        Instant.now(),
+                        emptyList()
+                        ),
                 null,
                 Map.of("test-key", "test-value"),
                 "test-protocol",
@@ -450,7 +450,7 @@ class TestTransportGroupProcessor {
 
     private RawMessage createMessage(String sessionAlias, Direction direction, long sequence) {
         return new RawMessage(
-                new MessageId(sessionAlias, direction, sequence, emptyList(), Instant.now()),
+                new MessageId(sessionAlias, direction, sequence, Instant.now(), emptyList()),
                 null,
                 emptyMap(),
                 "",

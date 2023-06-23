@@ -1,8 +1,11 @@
+import com.github.jk1.license.render.*
+
 plugins {
     id 'java'
     id 'java-library'
     id 'application'
     id 'com.palantir.docker' version '0.25.0'
+    id 'com.github.jk1.dependency-license-report' version '2.4'
 }
 
 ext {
@@ -96,4 +99,13 @@ dockerPrepare {
 
 docker {
     copySpec.from(tarTree("$buildDir/distributions/${applicationName}.tar"))
+}
+
+licenseReport {
+    renderers = [
+            new XmlReportRenderer("${project.name}-licenses.xml"),
+            new CsvReportRenderer("${project.name}-licenses.csv"),
+            new JsonReportRenderer("${project.name}-licenses.json"),
+            new InventoryHtmlReportRenderer("${project.name}-licenses.html")
+    ]
 }

@@ -1,4 +1,7 @@
-import com.github.jk1.license.render.*
+import com.github.jk1.license.render.CsvCustomReportRenderer
+import com.github.jk1.license.render.InventoryHtmlReportRenderer
+import com.github.jk1.license.render.JsonReportRenderer
+import com.github.jk1.license.render.XmlReportRenderer
 
 plugins {
     id 'java'
@@ -55,7 +58,7 @@ jar {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:4.4.0-update-libs-5345334944-c71fdc9-SNAPSHOT')
+    api platform('com.exactpro.th2:bom:4.4.0')
 
     implementation "com.exactpro.th2:common:$commonVersion"
     implementation 'com.exactpro.th2:task-utils:0.1.1'

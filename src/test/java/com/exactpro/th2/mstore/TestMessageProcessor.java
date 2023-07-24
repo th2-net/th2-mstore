@@ -19,19 +19,32 @@ import com.exactpro.cradle.CradleEntitiesFactory;
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.cassandra.resultset.CassandraCradleResultSet;
+import com.exactpro.cradle.messages.CradleMessage;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.cradle.messages.StoredGroupedMessageBatch;
 import com.exactpro.cradle.messages.StoredMessage;
 import com.exactpro.cradle.utils.CradleStorageException;
-import com.exactpro.th2.common.grpc.*;
+import com.exactpro.th2.common.grpc.ConnectionID;
+import com.exactpro.th2.common.grpc.Direction;
+import com.exactpro.th2.common.grpc.MessageID;
+import com.exactpro.th2.common.grpc.RawMessage;
+import com.exactpro.th2.common.grpc.RawMessageBatch;
+import com.exactpro.th2.common.grpc.RawMessageMetadata;
 import com.exactpro.th2.common.schema.message.DeliveryMetadata;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback;
+import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.TimestampOrBuilder;
 import org.jetbrains.annotations.NotNull;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.io.IOException;
@@ -42,9 +55,18 @@ import java.util.Random;
 
 import static com.exactpro.th2.common.event.EventUtils.toTimestamp;
 import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class TestMessageProcessor {
     private static final int DRAIN_TIMEOUT = 1000;
@@ -57,7 +79,6 @@ class TestMessageProcessor {
     @SuppressWarnings("unchecked")
     private final MessageRouter<RawMessageBatch> routerMock = (MessageRouter<RawMessageBatch>) mock(MessageRouter.class);
 
-    @SuppressWarnings("unchecked")
     private final Persistor persistor = mock(Persistor.class);
     private final DeliveryMetadata deliveryMetadata = new DeliveryMetadata("", false);
     private final ManualAckDeliveryCallback.Confirmation confirmation = mock(ManualAckDeliveryCallback.Confirmation.class);
@@ -116,13 +137,13 @@ class TestMessageProcessor {
         return createDelivery(List.of(messages));
     }
 
-    private static void assertMessageToStore(StoredMessage message, String bookName, String sessionAlias, Direction direction) {
+    private static void assertMessageToStore(CradleMessage message, String bookName, String sessionAlias, Direction direction) {
         assertEquals(bookName, message.getBookId().getName());
         assertEquals(sessionAlias, message.getSessionAlias());
         assertEquals(toCradleDirection(direction), message.getDirection());
     }
 
-    private static void assertMessageBatchToStore(GroupedMessageBatchToStore batch, String bookName, String groupName, int count) {
+    private static void assertMessageBatchToStore(StoredGroupedMessageBatch batch, String bookName, String groupName, int count) {
         assertEquals(bookName, batch.getBookId().getName());
         assertEquals(groupName, batch.getGroup());
         assertEquals(count, batch.getMessageCount());
@@ -131,18 +152,20 @@ class TestMessageProcessor {
     private static void assertAllGroupValuesMatchTo(ArgumentCaptor<String> capture, String value, int count) {
         List<String> values = capture.getAllValues();
         if (count == 0) {
-            if (! (values == null || values.size() == 0))
+            if (! (values == null || values.isEmpty())) {
                 Assertions.fail("Expecting empty values for groups");
+            }
             return;
         }
 
         assertNotNull(values);
         assertEquals(count, values.size());
         values.forEach(group -> {
-            if (value == null)
+            if (value == null) {
                 assertNull(group);
-            else
+            } else {
                 assertEquals(value, group);
+            }
         });
     }
 
@@ -434,15 +457,101 @@ class TestMessageProcessor {
             assertNotNull(groupValues);
             assertEquals(6, groupValues.size());
 
-            for (int i = 0; i < batchValues.size(); i++) {
-                GroupedMessageBatchToStore batch = batchValues.get(i);
+            for (GroupedMessageBatchToStore batch : batchValues) {
                 String group = batch.getGroup();
-                if (group.equals("group1")) {
+                if ("group1".equals(group)) {
                     List<StoredMessage> messages = List.copyOf(batch.getMessages());
                     assertMessageToStore(messages.get(0), bookName, "testA", Direction.FIRST);
                     assertEquals(1, messages.get(0).getSequence());
                 }
-                if (group.equals("group2")) {
+                if ("group2".equals(group)) {
+                    List<StoredMessage> messages = List.copyOf(batch.getMessages());
+                    assertMessageToStore(messages.get(0), bookName, "testB", Direction.FIRST);
+                    assertEquals(2, messages.get(0).getSequence());
+                }
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("Deliveries for different books")
+    class TestDeliveriesForDifferentBooks {
+
+        @Test
+        @DisplayName("Deliveries for different books and the same group are stored separately")
+        void separateBatchesWithTheSameGroup() throws Exception {
+            String bookName1 = "bookA";
+            String bookName2 = "bookB";
+            String sessionGroup = "group";
+
+            RawMessage first = createMessage("testA", sessionGroup, Direction.FIRST, 1, bookName1);
+            RawMessage second = createMessage("testB", sessionGroup, Direction.FIRST, 2, bookName2);
+
+            processor.process(deliveryMetadata, deliveryOf(first), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(second), confirmation);
+
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
+            ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
+            verify(persistor, timeout(DRAIN_TIMEOUT).times(2)).persist(batchCapture.capture(), any());
+            verify(cradleEntitiesFactory, times(2 + 4/*invocations in SessionBatchHolder (init + reset)*/))
+                    .groupedMessageBatch(groupCapture.capture());
+
+            List<GroupedMessageBatchToStore> batchValues = batchCapture.getAllValues();
+            assertNotNull(batchValues);
+            assertEquals(2, batchValues.size());
+
+            List<String> groupValues = groupCapture.getAllValues();
+            assertNotNull(groupValues);
+            assertEquals(6, groupValues.size());
+
+            for (GroupedMessageBatchToStore batch : batchValues) {
+                assertEquals(sessionGroup, batch.getGroup());
+                String bookNmae = batch.getBookId().getName();
+                if (bookNmae.equals(bookName1)) {
+                    List<StoredMessage> messages = List.copyOf(batch.getMessages());
+                    assertMessageToStore(messages.get(0), bookName1, "testA", Direction.FIRST);
+                    assertEquals(1, messages.get(0).getSequence());
+                }
+                if (bookNmae.equals(bookName2)) {
+                    List<StoredMessage> messages = List.copyOf(batch.getMessages());
+                    assertMessageToStore(messages.get(0), bookName2, "testB", Direction.FIRST);
+                    assertEquals(2, messages.get(0).getSequence());
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("Deliveries for different groups are stored separately")
+        void separateBatches() throws Exception {
+            String bookName = bookName(random.nextInt());
+            RawMessage first = createMessage("testA", "group1", Direction.FIRST, 1, bookName);
+            RawMessage second = createMessage("testB", "group2", Direction.FIRST, 2, bookName);
+
+            processor.process(deliveryMetadata, deliveryOf(first), confirmation);
+            processor.process(deliveryMetadata, deliveryOf(second), confirmation);
+
+            ArgumentCaptor<GroupedMessageBatchToStore> batchCapture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
+            ArgumentCaptor<String> groupCapture = ArgumentCaptor.forClass(String.class);
+            verify(persistor, timeout(DRAIN_TIMEOUT).times(2)).persist(batchCapture.capture(), any());
+            verify(cradleEntitiesFactory, times(2 + 4/*invocations in SessionBatchHolder (init + reset)*/))
+                    .groupedMessageBatch(groupCapture.capture());
+
+            List<GroupedMessageBatchToStore> batchValues = batchCapture.getAllValues();
+            assertNotNull(batchValues);
+            assertEquals(2, batchValues.size());
+
+            List<String> groupValues = groupCapture.getAllValues();
+            assertNotNull(groupValues);
+            assertEquals(6, groupValues.size());
+
+            for (GroupedMessageBatchToStore batch : batchValues) {
+                String group = batch.getGroup();
+                if ("group1".equals(group)) {
+                    List<StoredMessage> messages = List.copyOf(batch.getMessages());
+                    assertMessageToStore(messages.get(0), bookName, "testA", Direction.FIRST);
+                    assertEquals(1, messages.get(0).getSequence());
+                }
+                if ("group2".equals(group)) {
                     List<StoredMessage> messages = List.copyOf(batch.getMessages());
                     assertMessageToStore(messages.get(0), bookName, "testB", Direction.FIRST);
                     assertEquals(2, messages.get(0).getSequence());

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2023 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -20,28 +20,45 @@ import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.Direction;
 import com.exactpro.cradle.Order;
 import com.exactpro.cradle.filters.FilterForLess;
-import com.exactpro.cradle.messages.*;
+import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.cradle.messages.GroupedMessageFilter;
+import com.exactpro.cradle.messages.MessageFilter;
+import com.exactpro.cradle.messages.MessageToStore;
+import com.exactpro.cradle.messages.StoredGroupedMessageBatch;
+import com.exactpro.cradle.messages.StoredMessage;
+import com.exactpro.cradle.messages.StoredMessageId;
 import com.exactpro.cradle.resultset.CradleResultSet;
 import com.exactpro.cradle.utils.CradleStorageException;
 import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
+import com.exactpro.th2.common.grpc.RawMessageBatchOrBuilder;
+import com.exactpro.th2.common.grpc.RawMessageOrBuilder;
 import com.exactpro.th2.common.schema.message.DeliveryMetadata;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.exactpro.th2.common.schema.message.QueueAttribute;
 import com.exactpro.th2.common.schema.message.SubscriberMonitor;
-import io.prometheus.client.Histogram;
+import io.prometheus.client.Histogram.Timer;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
@@ -54,17 +71,17 @@ import static java.util.Objects.requireNonNull;
 import static java.util.function.BinaryOperator.maxBy;
 
 public class MessageProcessor implements AutoCloseable  {
-    private static final Logger logger = LoggerFactory.getLogger(MessageProcessor.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(MessageProcessor.class);
     private static final String[] ATTRIBUTES = {QueueAttribute.SUBSCRIBE.getValue(), QueueAttribute.RAW.getValue()};
 
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Map<SessionKey, SessionData> sessions = new ConcurrentHashMap<>();
     private final Map<GroupKey, Instant> groups = new ConcurrentHashMap<>();
-    private final Map<String, BatchConsolidator> batchCaches = new ConcurrentHashMap<>();
+    private final Map<GroupKey, BatchConsolidator> batchCaches = new ConcurrentHashMap<>();
 
     private final Configuration configuration;
-    private volatile ScheduledFuture<?> drainFuture;
+    private volatile @Nullable ScheduledFuture<?> drainFuture;
     private final MessageRouter<RawMessageBatch> router;
     private SubscriberMonitor monitor;
     private final Persistor<GroupedMessageBatchToStore> persistor;
@@ -80,8 +97,8 @@ public class MessageProcessor implements AutoCloseable  {
     ) {
         this.router = requireNonNull(router, "Message router can't be null");
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
-        this.persistor = Objects.requireNonNull(persistor, "Persistor can't be null");
-        this.configuration = Objects.requireNonNull(configuration, "'Configuration' parameter");
+        this.persistor = requireNonNull(persistor, "Persistor can't be null");
+        this.configuration = requireNonNull(configuration, "'Configuration' parameter");
         this.metrics = new MessageProcessorMetrics();
 
         this.manualDrain = new ManualDrainTrigger(drainExecutor, (int) Math.round(prefetchCount * configuration.getPrefetchRatioToDrain()));
@@ -90,22 +107,21 @@ public class MessageProcessor implements AutoCloseable  {
     public void start() {
         if (monitor == null) {
 
-            monitor = router.subscribeAllWithManualAck(this::process, MessageProcessor.ATTRIBUTES);
-            if (monitor != null) {
-                logger.info("RabbitMQ subscription was successful");
-            } else {
-                logger.error("Can not find queues for subscribe");
+            monitor = router.subscribeAllWithManualAck(this::process, ATTRIBUTES);
+            if (monitor == null) {
+                LOGGER.error("Can not find queues for subscribe");
                 throw new RuntimeException("Can not find queues for subscriber");
             }
+            LOGGER.info("RabbitMQ subscription was successful");
         }
 
-        logger.info("Rebatching is {}", (configuration.isRebatching() ? "on" : "off"));
+        LOGGER.info("Rebatching is {}", (configuration.isRebatching() ? "on" : "off"));
         if (configuration.isRebatching()) {
             drainFuture = drainExecutor.scheduleAtFixedRate(this::scheduledDrain,
                                                             configuration.getDrainInterval(),
                                                             configuration.getDrainInterval(),
                                                             TimeUnit.MILLISECONDS);
-            logger.info("Drain scheduler is started");
+            LOGGER.info("Drain scheduler is started");
         }
     }
 
@@ -115,50 +131,51 @@ public class MessageProcessor implements AutoCloseable  {
         if (monitor != null) {
             try {
                 monitor.unsubscribe();
-            } catch (Exception e) {
-                logger.error("Can not unsubscribe from queues", e);
+            } catch (IOException | RuntimeException e) {
+                LOGGER.error("Can not unsubscribe from queues", e);
             }
         }
         try {
-            ScheduledFuture<?> future = this.drainFuture;
+            ScheduledFuture<?> future = drainFuture;
             if (future != null) {
                 this.drainFuture = null;
                 future.cancel(false);
             }
-        } catch (Exception ex) {
-            logger.error("Cannot cancel drain task", ex);
+        } catch (RuntimeException ex) {
+            LOGGER.error("Cannot cancel drain task", ex);
         }
 
         try {
             drain(true);
-        } catch (Exception ex) {
-            logger.error("Cannot drain left batches during shutdown", ex);
+        } catch (RuntimeException ex) {
+            LOGGER.error("Cannot drain left batches during shutdown", ex);
         }
 
         try {
             drainExecutor.shutdown();
             if (!drainExecutor.awaitTermination(configuration.getTerminationTimeout(), TimeUnit.MILLISECONDS)) {
-                logger.warn("Drain executor was not terminated during {} millis. Call force shutdown", configuration.getTerminationTimeout());
+                LOGGER.warn("Drain executor was not terminated during {} millis. Call force shutdown", configuration.getTerminationTimeout());
                 List<Runnable> leftTasks = drainExecutor.shutdownNow();
                 if (!leftTasks.isEmpty()) {
-                    logger.warn("{} tasks left in the queue", leftTasks.size());
+                    LOGGER.warn("{} tasks left in the queue", leftTasks.size());
                 }
             }
-        } catch (Exception ex) {
-            logger.error("Cannot gracefully shutdown drain executor", ex);
-            if (ex instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+        } catch (InterruptedException e) {
+            LOGGER.error("Cannot gracefully shutdown drain executor", e);
+            Thread.currentThread().interrupt();
+        } catch (RuntimeException e) {
+            LOGGER.error("Cannot gracefully shutdown drain executor", e);
         }
     }
 
 
-    void process(DeliveryMetadata deliveryMetadata, RawMessageBatch messageBatch, Confirmation confirmation) {
+    void process(DeliveryMetadata deliveryMetadata, RawMessageBatchOrBuilder messageBatch, Confirmation confirmation) {
         try {
             List<RawMessage> messages = messageBatch.getMessagesList();
             if (messages.isEmpty()) {
-                if (logger.isWarnEnabled())
-                    logger.warn("Received empty batch {}", shortDebugString(messageBatch));
+                if (LOGGER.isWarnEnabled()) {
+                    LOGGER.warn("Received empty batch {}", shortDebugString(messageBatch));
+                }
                 confirm(confirmation);
                 return;
             }
@@ -166,32 +183,33 @@ public class MessageProcessor implements AutoCloseable  {
             var firstMessage = messages.get(0);
             GroupKey groupKey = new GroupKey(firstMessage.getMetadata().getId());
 
-            if (!deliveryMetadata.isRedelivered())
+            if (!deliveryMetadata.isRedelivered()) {
                 verifyBatch(groupKey, messages);
+            }
 
-            GroupedMessageBatchToStore groupedMessageBatchToStore = toCradleBatch(groupKey.group, messages);
+            GroupedMessageBatchToStore groupedBatchToStore = toCradleBatch(groupKey.group, messages);
 
             for (RawMessage message: messages) {
                 SessionKey sessionKey = createSessionKey(message);
                 MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message);
-                SessionData sessionData = sessions.computeIfAbsent(sessionKey, k -> new SessionData());
+                SessionData sessionData = sessions.computeIfAbsent(sessionKey, key -> new SessionData());
 
                 sessionData.getAndUpdateOrderingProperties(sequenceToTimestamp);
             }
-            groups.put(groupKey, groupedMessageBatchToStore.getLastTimestamp());
+            groups.put(groupKey, groupedBatchToStore.getLastTimestamp());
 
             if (deliveryMetadata.isRedelivered()) {
-                persist(new ConsolidatedBatch(groupedMessageBatchToStore, confirmation));
+                persist(new ConsolidatedBatch(groupedBatchToStore, confirmation));
             } else {
-                storeMessages(groupedMessageBatchToStore, confirmation);
+                storeMessages(groupedBatchToStore, groupKey, confirmation);
             }
-        } catch (Exception ex) {
-            logger.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
+        } catch (CradleStorageException | RuntimeException ex) {
+            LOGGER.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
             reject(confirmation);
         }
     }
 
-    protected MessageOrderingProperties extractOrderingProperties(RawMessage message) {
+    protected MessageOrderingProperties extractOrderingProperties(RawMessageOrBuilder message) {
         return new MessageOrderingProperties(
                 message.getMetadata().getId().getSequence(),
                 message.getMetadata().getId().getTimestamp()
@@ -201,8 +219,8 @@ public class MessageProcessor implements AutoCloseable  {
     private static void confirm(Confirmation confirmation) {
         try {
             confirmation.confirm();
-        } catch (Exception e) {
-            logger.error("Exception confirming message", e);
+        } catch (IOException | RuntimeException e) {
+            LOGGER.error("Exception confirming message", e);
         }
     }
 
@@ -210,13 +228,13 @@ public class MessageProcessor implements AutoCloseable  {
     private static void reject(Confirmation confirmation) {
         try {
             confirmation.reject();
-        } catch (Exception e) {
-            logger.error("Exception rejecting message", e);
+        } catch (IOException | RuntimeException e) {
+            LOGGER.error("Exception rejecting message", e);
         }
     }
 
 
-    private GroupedMessageBatchToStore toCradleBatch(String group, List<RawMessage> messagesList) throws CradleStorageException {
+    private GroupedMessageBatchToStore toCradleBatch(String group, Iterable<RawMessage> messagesList) throws CradleStorageException {
         GroupedMessageBatchToStore batch = cradleStorage.getEntitiesFactory().groupedMessageBatch(group);
         for (RawMessage message : messagesList) {
             MessageToStore messageToStore = ProtoUtil.toCradleMessage(message);
@@ -226,19 +244,19 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
 
-    private void storeMessages(GroupedMessageBatchToStore batch, Confirmation confirmation) throws Exception {
-        logger.trace("Process {} messages started", batch.getMessageCount());
+    private void storeMessages(GroupedMessageBatchToStore batch, GroupKey groupKey, Confirmation confirmation) throws CradleStorageException {
+        LOGGER.trace("Process {} messages started", batch.getMessageCount());
 
         ConsolidatedBatch consolidatedBatch;
         if (configuration.isRebatching()) {
-            BatchConsolidator consolidator = batchCaches.computeIfAbsent(batch.getGroup(),
-                    k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(batch.getGroup()), configuration.getMaxBatchSize()));
+            BatchConsolidator consolidator = batchCaches.computeIfAbsent(groupKey,
+                    key -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(batch.getGroup()), configuration.getMaxBatchSize()));
 
             synchronized (consolidator) {
                 if (consolidator.add(batch, confirmation)) {
                     manualDrain.registerMessage();
-                    if (logger.isTraceEnabled()) {
-                        logger.trace("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
                     }
 
                     manualDrain.runConditionally(this::manualDrain);
@@ -255,14 +273,15 @@ public class MessageProcessor implements AutoCloseable  {
             consolidatedBatch = new ConsolidatedBatch(batch, confirmation);
         }
 
-        if (consolidatedBatch.batch.isEmpty())
-            logger.debug("Batch cache for group \"{}\" has been concurrently reset. Skip storing", batch.getGroup());
-        else
+        if (consolidatedBatch.batch.isEmpty()) {
+            LOGGER.debug("Batch cache for group \"{}\" has been concurrently reset. Skip storing", batch.getGroup());
+        } else {
             persist(consolidatedBatch);
+        }
     }
 
 
-    private String formatMessageBatchToStore(GroupedMessageBatchToStore batch, boolean full) {
+    private static String formatMessageBatchToStore(GroupedMessageBatchToStore batch, boolean full) {
         ToStringBuilder builder = new ToStringBuilder(batch, ToStringStyle.NO_CLASS_NAME_STYLE)
                 .append("book name", batch.getBookId().getName())
                 .append("session group", batch.getGroup());
@@ -280,9 +299,7 @@ public class MessageProcessor implements AutoCloseable  {
 
 
     private void verifyBatch(GroupKey groupKey, List<RawMessage> messages) {
-        HashMap<SessionKey, SessionData> localCache = new HashMap<>();
         var firstMessage = messages.get(0);
-        SessionKey firstSessionKey = null;
 
         var bookId = new BookId(firstMessage.getMetadata().getId().getBookName());
 
@@ -291,6 +308,8 @@ public class MessageProcessor implements AutoCloseable  {
             ts = loadLastMessageTimestamp(bookId, groupKey.group);
         }
 
+        Map<SessionKey, SessionData> localCache = new HashMap<>();
+        SessionKey firstSessionKey = null;
         for (int i = 0; i < messages.size(); i++) {
             RawMessage message = messages.get(i);
 
@@ -305,8 +324,9 @@ public class MessageProcessor implements AutoCloseable  {
             }
 
             SessionKey sessionKey = createSessionKey(message);
-            if (firstSessionKey == null)
+            if (firstSessionKey == null) {
                 firstSessionKey = sessionKey;
+            }
 
             if(!firstSessionKey.sessionGroup.equals(sessionKey.sessionGroup)){
                 throw new IllegalArgumentException(format(
@@ -336,7 +356,7 @@ public class MessageProcessor implements AutoCloseable  {
         }
     }
 
-    private void verifyOrderingProperties(
+    private static void verifyOrderingProperties(
             int messageIndex,
             MessageOrderingProperties previous,
             MessageOrderingProperties current
@@ -384,7 +404,7 @@ public class MessageProcessor implements AutoCloseable  {
             lastMessageSequence = message.getSequence();
             lastMessageTimestamp = message.getTimestamp();
         } catch (CradleStorageException | IOException | NoSuchElementException e) {
-            logger.trace("Couldn't get last message from cradle: {}", e.getMessage());
+            LOGGER.trace("Couldn't get last message from cradle: {}", e.getMessage());
             return MessageOrderingProperties.MIN_VALUE;
         }
 
@@ -392,7 +412,6 @@ public class MessageProcessor implements AutoCloseable  {
     }
 
     Instant loadLastMessageTimestamp(BookId book, String groupName){
-        Instant lastMessageTimestamp;
         try {
             GroupedMessageFilter filter = new GroupedMessageFilter(book, groupName);
             filter.setTo(FilterForLess.forLess(Instant.now()));
@@ -410,42 +429,41 @@ public class MessageProcessor implements AutoCloseable  {
                 return Instant.MIN;
             }
 
-            lastMessageTimestamp = batch.getLastTimestamp();
+            return batch.getLastTimestamp();
         } catch (CradleStorageException | IOException | NoSuchElementException e) {
-            logger.trace("Couldn't get last message timestamp for group {}: {}", groupName, e.getMessage());
+            LOGGER.trace("Couldn't get last message timestamp for group {}: {}", groupName, e.getMessage());
             return Instant.MIN;
         }
-
-        return lastMessageTimestamp;
     }
 
 
     private void scheduledDrain() {
-
-        logger.trace("Starting scheduled cache drain");
+        LOGGER.trace("Starting scheduled cache drain");
         drain(false);
-        logger.trace("Scheduled cache drain ended");
+        LOGGER.trace("Scheduled cache drain ended");
     }
 
     private void manualDrain() {
-        logger.trace("Starting manual cache drain");
+        LOGGER.trace("Starting manual cache drain");
         drain(true);
         manualDrain.completeDraining();
-        logger.trace("Manual cache drain ended");
+        LOGGER.trace("Manual cache drain ended");
     }
 
     private void drain(boolean force) {
         batchCaches.forEach((group, consolidator) -> {
-            logger.trace("Draining cache for group \"{}\" (forced={})", group, force);
+            LOGGER.trace("Draining cache for group \"{}\" (forced={})", group, force);
             ConsolidatedBatch data;
             synchronized (consolidator) {
-                if (!force && ((consolidator.ageInMillis() < configuration.getDrainInterval()) || consolidator.isEmpty()))
+                if (!force && ((consolidator.ageInMillis() < configuration.getDrainInterval()) || consolidator.isEmpty())) {
                     return;
+                }
                 data = consolidator.reset();
             }
             manualDrain.unregisterMessages(data.confirmations.size());
-            if (data.batch.isEmpty())
+            if (data.batch.isEmpty()) {
                 return;
+            }
             persist(data);
         });
     }
@@ -453,8 +471,7 @@ public class MessageProcessor implements AutoCloseable  {
 
     private void persist(ConsolidatedBatch data) {
         GroupedMessageBatchToStore batch = data.batch;
-        Histogram.Timer timer = metrics.startMeasuringPersistenceLatency();
-        try {
+        try(Timer ignored = metrics.startMeasuringPersistenceLatency()) {
             persistor.persist(batch, new Callback<>() {
                 @Override
                 public void onSuccess(GroupedMessageBatchToStore batch) {
@@ -467,15 +484,13 @@ public class MessageProcessor implements AutoCloseable  {
                 }
             });
         } catch (Exception e) {
-            logger.error("Exception storing batch for group \"{}\": {}", batch.getGroup(),
+            LOGGER.error("Exception storing batch for group \"{}\": {}", batch.getGroup(),
                             formatMessageBatchToStore(batch, false), e);
             data.confirmations.forEach(MessageProcessor::reject);
-        } finally {
-            timer.observeDuration();
         }
     }
 
-    private SessionKey createSessionKey(RawMessage message) {
+    private static SessionKey createSessionKey(RawMessageOrBuilder message) {
         return new SessionKey(message.getMetadata().getId());
     }
 
@@ -486,12 +501,12 @@ public class MessageProcessor implements AutoCloseable  {
         public final Direction direction;
 
         public SessionKey(MessageID messageID) {
-            this.sessionAlias = Objects.requireNonNull(messageID.getConnectionId().getSessionAlias(), "'Session alias' parameter");
-            this.direction = Objects.requireNonNull(toCradleDirection(messageID.getDirection()), "'Direction' parameter");
-            this.bookName = Objects.requireNonNull(messageID.getBookName(), "'Book name' parameter");
+            this.sessionAlias = requireNonNull(messageID.getConnectionId().getSessionAlias(), "'Session alias' parameter");
+            this.direction = requireNonNull(toCradleDirection(messageID.getDirection()), "'Direction' parameter");
+            this.bookName = requireNonNull(messageID.getBookName(), "'Book name' parameter");
 
             String group = messageID.getConnectionId().getSessionGroup();
-            this.sessionGroup = (group == null || group.isEmpty()) ? this.sessionAlias : group;
+            this.sessionGroup = group.isEmpty() ? sessionAlias : group;
         }
 
         public SessionKey (String bookName, String sessionAlias, String sessionGroup, Direction direction) {
@@ -503,14 +518,16 @@ public class MessageProcessor implements AutoCloseable  {
 
         @Override
         public boolean equals(Object other) {
-            if (this == other)
+            if (this == other) {
                 return true;
-            if (!(other instanceof SessionKey))
+            }
+            if (!(other instanceof SessionKey)) {
                 return false;
+            }
             SessionKey that = (SessionKey) other;
             return Objects.equals(sessionAlias, that.sessionAlias) &&
                     Objects.equals(sessionGroup, that.sessionGroup) &&
-                    Objects.equals(direction, that.direction) &&
+                    direction == that.direction &&
                     Objects.equals(bookName, that.bookName);
         }
 
@@ -535,18 +552,20 @@ public class MessageProcessor implements AutoCloseable  {
         public final String group;
 
         public GroupKey(MessageID messageID) {
-            this.bookName = Objects.requireNonNull(messageID.getBookName(), "'Book name' parameter");
+            this.bookName = requireNonNull(messageID.getBookName(), "'Book name' parameter");
             String sessionGroup = messageID.getConnectionId().getSessionGroup();
-            this.group = (sessionGroup == null || sessionGroup.isEmpty()) ?
-                    Objects.requireNonNull(messageID.getConnectionId().getSessionAlias(), "'Session alias' parameter") : sessionGroup;
+            this.group = sessionGroup.isEmpty() ?
+                    requireNonNull(messageID.getConnectionId().getSessionAlias(), "'Session alias' parameter") : sessionGroup;
         }
 
         @Override
         public boolean equals(Object other) {
-            if (this == other)
+            if (this == other) {
                 return true;
-            if (!(other instanceof GroupKey))
+            }
+            if (!(other instanceof GroupKey)) {
                 return false;
+            }
             GroupKey that = (GroupKey) other;
             return  Objects.equals(group, that.group) &&
                     Objects.equals(bookName, that.bookName);
@@ -569,14 +588,9 @@ public class MessageProcessor implements AutoCloseable  {
     static class SessionData {
         private final AtomicReference<MessageOrderingProperties> lastOrderingProperties =
                 new AtomicReference<>(MessageOrderingProperties.MIN_VALUE);
-
-        SessionData() {
-        }
-
         public MessageOrderingProperties getAndUpdateOrderingProperties(MessageOrderingProperties orderingProperties) {
             return lastOrderingProperties.getAndAccumulate(orderingProperties, maxBy(MessageOrderingProperties.COMPARATOR));
         }
-
         public MessageOrderingProperties getLastOrderingProperties() {
             return lastOrderingProperties.get();
         }

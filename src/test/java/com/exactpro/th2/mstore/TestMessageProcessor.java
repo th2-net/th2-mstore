@@ -30,6 +30,7 @@ import com.exactpro.th2.common.grpc.MessageID;
 import com.exactpro.th2.common.grpc.RawMessage;
 import com.exactpro.th2.common.grpc.RawMessageBatch;
 import com.exactpro.th2.common.grpc.RawMessageMetadata;
+import com.exactpro.th2.common.grpc.RawMessageOrBuilder;
 import com.exactpro.th2.common.schema.message.DeliveryMetadata;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback;
 import com.exactpro.th2.common.schema.message.ManualAckDeliveryCallback.Confirmation;
@@ -58,6 +59,7 @@ import static com.exactpro.th2.common.util.StorageUtils.toCradleDirection;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -79,7 +81,8 @@ class TestMessageProcessor {
     @SuppressWarnings("unchecked")
     private final MessageRouter<RawMessageBatch> routerMock = (MessageRouter<RawMessageBatch>) mock(MessageRouter.class);
 
-    private final Persistor persistor = mock(Persistor.class);
+    @SuppressWarnings("unchecked")
+    private final Persistor<GroupedMessageBatchToStore> persistor = (Persistor<GroupedMessageBatchToStore>) mock(Persistor.class);
     private final DeliveryMetadata deliveryMetadata = new DeliveryMetadata("", false);
     private final ManualAckDeliveryCallback.Confirmation confirmation = mock(ManualAckDeliveryCallback.Confirmation.class);
 
@@ -94,7 +97,8 @@ class TestMessageProcessor {
     void setUp() throws CradleStorageException, IOException {
         cradleEntitiesFactory = spy(new CradleEntitiesFactory(TEST_MESSAGE_BATCH_SIZE, TEST_EVENT_BATCH_SIZE, STORE_ACTION_REJECTION_THRESHOLD));
 
-        CassandraCradleResultSet rsMock = mock(CassandraCradleResultSet.class);
+        //noinspection unchecked
+        CassandraCradleResultSet<StoredMessage> rsMock = (CassandraCradleResultSet<StoredMessage>) mock(CassandraCradleResultSet.class);
         when(rsMock.next()).thenReturn(null);
         when(storageMock.getMessages(any())).thenReturn(rsMock);
 
@@ -113,7 +117,7 @@ class TestMessageProcessor {
 
 
     @NotNull
-    protected MessageID createMessageId(Instant timestamp, String sessionAlias, String sessionGroup, Direction direction, long sequence, String bookName) {
+    protected static MessageID createMessageId(Instant timestamp, String sessionAlias, String sessionGroup, Direction direction, long sequence, String bookName) {
         return MessageID.newBuilder()
                 .setTimestamp(toTimestamp(timestamp))
                 .setConnectionId(ConnectionID.newBuilder().setSessionAlias(sessionAlias).setSessionGroup(sessionGroup).build())
@@ -127,13 +131,12 @@ class TestMessageProcessor {
         return Instant.ofEpochSecond(timestamp.getSeconds(), timestamp.getNanos());
     }
 
-    private static String bookName(int i) {
-        return "book-name-" + i;
+    private static String bookName(int index) {
+        return "book-name-" + index;
     }
 
-    @SafeVarargs
     @SuppressWarnings("varargs")
-    private RawMessageBatch deliveryOf(RawMessage... messages) {
+    private static RawMessageBatch deliveryOf(RawMessage... messages) {
         return createDelivery(List.of(messages));
     }
 
@@ -244,20 +247,21 @@ class TestMessageProcessor {
 
             GroupedMessageBatchToStore batch = value.get(0);
 
-            boolean a = false, b = false;
             List<StoredMessage> messages = List.copyOf(batch.getMessages());
             assertEquals(2, messages.size());
-            for (StoredMessage m : messages) {
-                if (m.getDirection() == toCradleDirection(Direction.FIRST)) {
-                    assertMessageToStore(m, bookName, "testA", Direction.FIRST);
-                    a = true;
+            boolean firstCase = false;
+            boolean secondCase = false;
+            for (StoredMessage message : messages) {
+                if (message.getDirection() == toCradleDirection(Direction.FIRST)) {
+                    assertMessageToStore(message, bookName, "testA", Direction.FIRST);
+                    firstCase = true;
                 } else {
-                    assertMessageToStore(m, bookName, "testB", Direction.SECOND);
-                    b = true;
+                    assertMessageToStore(message, bookName, "testB", Direction.SECOND);
+                    secondCase = true;
                 }
             }
-            assertEquals(true, a);
-            assertEquals(true, b);
+            assertTrue(firstCase);
+            assertTrue(secondCase);
 
             assertAllGroupValuesMatchTo(groupCapture, "group", 4);
         }
@@ -560,7 +564,7 @@ class TestMessageProcessor {
         }
     }
 
-    private MessageProcessor createStore(
+    private static MessageProcessor createStore(
             CradleStorage cradleStorageMock,
             MessageRouter<RawMessageBatch> routerMock,
             Persistor<GroupedMessageBatchToStore> persistor,
@@ -569,7 +573,7 @@ class TestMessageProcessor {
         return new MessageProcessor(routerMock, cradleStorageMock, persistor, configuration, 0);
     }
 
-    private RawMessage createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, String bookName) {
+    private static RawMessage createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, String bookName) {
         return RawMessage.newBuilder()
                 .setMetadata(
                         RawMessageMetadata.newBuilder()
@@ -579,7 +583,7 @@ class TestMessageProcessor {
                 .build();
     }
 
-    private RawMessage createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, Instant timestamp, String bookName) {
+    private static RawMessage createMessage(String sessionAlias, String sessionGroup, Direction direction, long sequence, Instant timestamp, String bookName) {
         return RawMessage.newBuilder()
                 .setMetadata(
                         RawMessageMetadata.newBuilder()
@@ -589,13 +593,13 @@ class TestMessageProcessor {
                 .build();
     }
 
-    private RawMessageBatch createDelivery(List<RawMessage> messages) {
+    private static RawMessageBatch createDelivery(Iterable<RawMessage> messages) {
         return RawMessageBatch.newBuilder()
                 .addAllMessages(messages)
                 .build();
     }
 
-    private Timestamp extractTimestamp(RawMessage message) {
+    private static Timestamp extractTimestamp(RawMessageOrBuilder message) {
         return message.getMetadata().getId().getTimestamp();
     }
 }

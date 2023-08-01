@@ -12,7 +12,7 @@ plugins {
 }
 
 ext {
-    cradleVersion = '5.1.0-TH2-5004-+'
+    cradleVersion = '5.1.0-TH2-5004_session_statistic-+'
     commonVersion = '5.3.0-separate-executor-+'
 }
 

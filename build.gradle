@@ -1,4 +1,6 @@
 import com.github.jk1.license.render.*
+import com.github.jk1.license.filter.LicenseBundleNormalizer
+import com.github.jk1.license.render.JsonReportRenderer
 
 plugins {
     id 'java'
@@ -102,10 +104,26 @@ docker {
 }
 
 licenseReport {
+    def licenseNormalizerBundlePath = "$buildDir/license-normalizer-bundle.json"
+
+    if (!file(licenseNormalizerBundlePath).exists()) {
+        download.run {
+            src 'https://raw.githubusercontent.com/th2-net/.github/main/license-compliance/gradle-license-report/license-normalizer-bundle.json'
+            dest "$buildDir/license-normalizer-bundle.json"
+            overwrite false
+        }
+    }
+
+    filters = [
+            new LicenseBundleNormalizer(licenseNormalizerBundlePath, false)
+    ]
+
     renderers = [
             new XmlReportRenderer("${project.name}-licenses.xml"),
             new CsvCustomReportRenderer("${project.name}-licenses.csv"),
             new JsonReportRenderer("${project.name}-licenses.json"),
             new InventoryHtmlReportRenderer("${project.name}-licenses.html")
     ]
+    excludeOwnGroup = false
+    allowedLicensesFile = new URL("https://raw.githubusercontent.com/th2-net/.github/main/license-compliance/gradle-license-report/allowed-licenses.json")
 }

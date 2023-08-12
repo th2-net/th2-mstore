@@ -231,6 +231,17 @@ dependencyLocking {
     lockAllConfigurations()
 }
 
+dependencyCheck {
+    formats = ['SARIF', 'JSON', 'HTML']
+    failBuildOnCVSS = 5
+    suppressionFile = file('suppressions.xml')
+    analyzers {
+        assemblyEnabled = false
+        nugetconfEnabled = false
+        nodeEnabled = false
+    }
+}
+
 configurations.configureEach {
     resolutionStrategy {
         force "com.exactpro.th2:cradle-core:$cradleVersion"

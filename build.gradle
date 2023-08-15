@@ -16,7 +16,7 @@ plugins {
 
 ext {
     cradleVersion = '5.1.1-dev'
-    commonVersion = '5.3.2-dev'
+    commonVersion = '5.4.0-TH2-5035-+'
 }
 
 group = 'com.exactpro.th2'
@@ -156,7 +156,7 @@ signing {
 }
 
 dependencies {
-    api platform('com.exactpro.th2:bom:4.4.0')
+    api platform('com.exactpro.th2:bom:4.5.0-TH2-5035-+')
 
     implementation "com.exactpro.th2:common:$commonVersion"
     implementation 'com.exactpro.th2:task-utils:0.1.1'

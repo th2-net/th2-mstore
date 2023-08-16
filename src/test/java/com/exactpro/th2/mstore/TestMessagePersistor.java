@@ -70,6 +70,7 @@ public class TestMessagePersistor {
     private static final int MAX_MESSAGE_QUEUE_TASK_SIZE = 8;
     private static final long MAX_MESSAGE_QUEUE_DATA_SIZE = 10_000L;
 
+    private static final long STORE_ACTION_REJECTION_THRESHOLD = 30000L;
     private static final BookId BOOK_ID = new BookId("test-book");
 
     private final CradleStorage storageMock = mock(CradleStorage.class);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2023 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -34,6 +34,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,15 +55,15 @@ import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
 
 public abstract class AbstractMessageProcessor implements AutoCloseable {
-    private static final Logger logger = LoggerFactory.getLogger(AbstractMessageProcessor.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(AbstractMessageProcessor.class);
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     protected final Map<SessionKey, MessageOrderingProperties> sessions = new ConcurrentHashMap<>();
     protected final Map<GroupKey, Instant> groups = new ConcurrentHashMap<>();
-    private final Map<String, BatchConsolidator> batchCaches = new ConcurrentHashMap<>();
+    private final Map<GroupKey, BatchConsolidator> batchCaches = new ConcurrentHashMap<>();
 
     private final Configuration configuration;
-    private volatile ScheduledFuture<?> drainFuture;
+    private volatile @Nullable ScheduledFuture<?> drainFuture;
     private final Persistor<GroupedMessageBatchToStore> persistor;
     private final MessageProcessorMetrics metrics;
     private final ManualDrainTrigger manualDrain;
@@ -82,13 +83,13 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
     }
 
     public void start() {
-        logger.info("Rebatching is {}", (configuration.isRebatching() ? "on" : "off"));
+        LOGGER.info("Re-batching is {}", (configuration.isRebatching() ? "on" : "off"));
         if (configuration.isRebatching()) {
             drainFuture = drainExecutor.scheduleAtFixedRate(this::scheduledDrain,
                     configuration.getDrainInterval(),
                     configuration.getDrainInterval(),
                     TimeUnit.MILLISECONDS);
-            logger.info("Drain scheduler is started");
+            LOGGER.info("Drain scheduler is started");
         }
     }
 
@@ -96,43 +97,43 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
     @Override
     public void close() {
         try {
-            ScheduledFuture<?> future = this.drainFuture;
+            ScheduledFuture<?> future = drainFuture;
             if (future != null) {
                 this.drainFuture = null;
                 future.cancel(false);
             }
-        } catch (Exception ex) {
-            logger.error("Cannot cancel drain task", ex);
+        } catch (RuntimeException ex) {
+            LOGGER.error("Cannot cancel drain task", ex);
         }
 
         try {
             drain(true);
-        } catch (Exception ex) {
-            logger.error("Cannot drain left batches during shutdown", ex);
+        } catch (RuntimeException ex) {
+            LOGGER.error("Cannot drain left batches during shutdown", ex);
         }
 
         try {
             drainExecutor.shutdown();
             if (!drainExecutor.awaitTermination(configuration.getTerminationTimeout(), TimeUnit.MILLISECONDS)) {
-                logger.warn("Drain executor was not terminated during {} millis. Call force shutdown", configuration.getTerminationTimeout());
+                LOGGER.warn("Drain executor was not terminated during {} millis. Call force shutdown", configuration.getTerminationTimeout());
                 List<Runnable> leftTasks = drainExecutor.shutdownNow();
                 if (!leftTasks.isEmpty()) {
-                    logger.warn("{} tasks left in the queue", leftTasks.size());
+                    LOGGER.warn("{} tasks left in the queue", leftTasks.size());
                 }
             }
-        } catch (Exception ex) {
-            logger.error("Cannot gracefully shutdown drain executor", ex);
-            if (ex instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+        } catch (InterruptedException e) {
+            LOGGER.error("Cannot gracefully shutdown drain executor", e);
+            Thread.currentThread().interrupt();
+        } catch (RuntimeException e) {
+            LOGGER.error("Cannot gracefully shutdown drain executor", e);
         }
     }
 
     private static void confirm(Confirmation confirmation) {
         try {
             confirmation.confirm();
-        } catch (Exception e) {
-            logger.error("Exception confirming message", e);
+        } catch (IOException | RuntimeException e) {
+            LOGGER.error("Exception confirming message", e);
         }
     }
 
@@ -140,25 +141,25 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
     private static void reject(Confirmation confirmation) {
         try {
             confirmation.reject();
-        } catch (Exception e) {
-            logger.error("Exception rejecting message", e);
+        } catch (IOException | RuntimeException e) {
+            LOGGER.error("Exception rejecting message", e);
         }
     }
 
 
-    protected void storeMessages(GroupedMessageBatchToStore batch, Confirmation confirmation) throws Exception {
-        logger.trace("Process {} messages started", batch.getMessageCount());
+    protected void storeMessages(GroupedMessageBatchToStore batch, GroupKey groupKey, Confirmation confirmation) throws Exception {
+        LOGGER.trace("Process {} messages started", batch.getMessageCount());
 
         ConsolidatedBatch consolidatedBatch;
         if (configuration.isRebatching()) {
-            BatchConsolidator consolidator = batchCaches.computeIfAbsent(batch.getGroup(),
-                    k -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(batch.getGroup()), configuration.getMaxBatchSize()));
+            BatchConsolidator consolidator = batchCaches.computeIfAbsent(groupKey,
+                    key -> new BatchConsolidator(() -> cradleStorage.getEntitiesFactory().groupedMessageBatch(batch.getGroup()), configuration.getMaxBatchSize()));
 
             synchronized (consolidator) {
                 if (consolidator.add(batch, confirmation)) {
                     manualDrain.registerMessage();
-                    if (logger.isTraceEnabled()) {
-                        logger.trace("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
+                    if (LOGGER.isTraceEnabled()) {
+                        LOGGER.trace("Message Batch added to the cache: {}", formatMessageBatchToStore(batch, true));
                     }
 
                     manualDrain.runConditionally(this::manualDrain);
@@ -175,14 +176,15 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
             consolidatedBatch = new ConsolidatedBatch(batch, confirmation);
         }
 
-        if (consolidatedBatch.batch.isEmpty())
-            logger.debug("Batch cache for group \"{}\" has been concurrently reset. Skip storing", batch.getGroup());
-        else
+        if (consolidatedBatch.batch.isEmpty()) {
+            LOGGER.debug("Batch cache for group \"{}\" has been concurrently reset. Skip storing", batch.getGroup());
+        } else {
             persist(consolidatedBatch);
+        }
     }
 
 
-    private String formatMessageBatchToStore(GroupedMessageBatchToStore batch, boolean full) {
+    private static String formatMessageBatchToStore(GroupedMessageBatchToStore batch, boolean full) {
         ToStringBuilder builder = new ToStringBuilder(batch, ToStringStyle.NO_CLASS_NAME_STYLE)
                 .append("book name", batch.getBookId().getName())
                 .append("session group", batch.getGroup());
@@ -246,7 +248,7 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
             lastMessageSequence = message.getSequence();
             lastMessageTimestamp = message.getTimestamp();
         } catch (CradleStorageException | IOException | NoSuchElementException e) {
-            logger.trace("Couldn't get last message from cradle: {}", e.getMessage());
+            LOGGER.trace("Couldn't get last message from cradle: {}", e.getMessage());
             return MessageOrderingProperties.MIN_VALUE;
         }
 
@@ -254,7 +256,6 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
     }
 
     public Instant loadLastMessageTimestamp(BookId book, String groupName) {
-        Instant lastMessageTimestamp;
         try {
             GroupedMessageFilter filter = new GroupedMessageFilter(book, groupName);
             filter.setTo(FilterForLess.forLess(Instant.now()));
@@ -272,42 +273,41 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
                 return Instant.MIN;
             }
 
-            lastMessageTimestamp = batch.getLastTimestamp();
+            return batch.getLastTimestamp();
         } catch (CradleStorageException | IOException | NoSuchElementException e) {
-            logger.trace("Couldn't get last message timestamp for group {}: {}", groupName, e.getMessage());
+            LOGGER.trace("Couldn't get last message timestamp for group {}: {}", groupName, e.getMessage());
             return Instant.MIN;
         }
-
-        return lastMessageTimestamp;
     }
 
 
     private void scheduledDrain() {
-
-        logger.trace("Starting scheduled cache drain");
+        LOGGER.trace("Starting scheduled cache drain");
         drain(false);
-        logger.trace("Scheduled cache drain ended");
+        LOGGER.trace("Scheduled cache drain ended");
     }
 
     private void manualDrain() {
-        logger.trace("Starting manual cache drain");
+        LOGGER.trace("Starting manual cache drain");
         drain(true);
         manualDrain.completeDraining();
-        logger.trace("Manual cache drain ended");
+        LOGGER.trace("Manual cache drain ended");
     }
 
     private void drain(boolean force) {
         batchCaches.forEach((group, consolidator) -> {
-            logger.trace("Draining cache for group \"{}\" (forced={})", group, force);
+            LOGGER.trace("Draining cache for group \"{}\" (forced={})", group, force);
             ConsolidatedBatch data;
             synchronized (consolidator) {
-                if (!force && ((consolidator.ageInMillis() < configuration.getDrainInterval()) || consolidator.isEmpty()))
+                if (!force && ((consolidator.ageInMillis() < configuration.getDrainInterval()) || consolidator.isEmpty())) {
                     return;
+                }
                 data = consolidator.reset();
             }
             manualDrain.unregisterMessages(data.confirmations.size());
-            if (data.batch.isEmpty())
+            if (data.batch.isEmpty()) {
                 return;
+            }
             persist(data);
         });
     }
@@ -328,8 +328,8 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
                 }
             });
         } catch (Exception e) {
-            if (logger.isErrorEnabled()) {
-                logger.error("Exception storing batch for group \"{}\": {}", batch.getGroup(),
+            if (LOGGER.isErrorEnabled()) {
+                LOGGER.error("Exception storing batch for group \"{}\": {}", batch.getGroup(),
                         formatMessageBatchToStore(batch, false), e);
             }
             data.confirmations.forEach(AbstractMessageProcessor::reject);
@@ -351,14 +351,16 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
 
         @Override
         public boolean equals(Object other) {
-            if (this == other)
+            if (this == other) {
                 return true;
-            if (!(other instanceof SessionKey))
+            }
+            if (!(other instanceof SessionKey)) {
                 return false;
+            }
             SessionKey that = (SessionKey) other;
             return Objects.equals(sessionAlias, that.sessionAlias) &&
                     Objects.equals(sessionGroup, that.sessionGroup) &&
-                    Objects.equals(direction, that.direction) &&
+                    direction == that.direction &&
                     Objects.equals(bookName, that.bookName);
         }
 
@@ -396,10 +398,12 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
 
         @Override
         public boolean equals(Object other) {
-            if (this == other)
+            if (this == other) {
                 return true;
-            if (!(other instanceof GroupKey))
+            }
+            if (!(other instanceof GroupKey)) {
                 return false;
+            }
             GroupKey that = (GroupKey) other;
             return Objects.equals(sessionGroup, that.sessionGroup) &&
                     Objects.equals(bookName, that.bookName);
@@ -424,7 +428,6 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
             }
             return value;
         }
-
         public static String identifySessionGroup(String sessionGroup, String sessionAlias) {
             return (sessionGroup == null || sessionGroup.isBlank()) ? requireNonBlank(sessionAlias, "'Session alias' parameter can not be blank") : sessionGroup;
         }

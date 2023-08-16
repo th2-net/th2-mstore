@@ -70,12 +70,11 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
         if (monitor == null) {
 
             monitor = router.subscribeAllWithManualAck(this::process, ATTRIBUTES);
-            if (monitor != null) {
-                LOGGER.info("RabbitMQ subscription was successful");
-            } else {
+            if (monitor == null) {
                 LOGGER.error("Can not find queues for subscribe");
                 throw new RuntimeException("Can not find queues for subscriber");
             }
+            LOGGER.info("RabbitMQ subscription was successful");
         }
         super.start();
     }
@@ -117,14 +116,14 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
             for (RawMessage message : messages) {
                 SessionKey sessionKey = createSessionKey(message.getMetadata().getId());
                 MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message.getMetadata().getId());
-                sessions.computeIfAbsent(sessionKey, k -> sequenceToTimestamp);
+                sessions.computeIfAbsent(sessionKey, key -> sequenceToTimestamp);
             }
             groups.put(groupKey, groupedMessageBatchToStore.getLastTimestamp());
 
             if (deliveryMetadata.isRedelivered()) {
                 persist(new ConsolidatedBatch(groupedMessageBatchToStore, confirmation));
             } else {
-                storeMessages(groupedMessageBatchToStore, confirmation);
+                storeMessages(groupedMessageBatchToStore, groupKey, confirmation);
             }
         } catch (Exception ex) {
             LOGGER.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
@@ -241,7 +240,7 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
                 .timestamp(toInstant(messageId.getTimestamp()))
                 .sequence(messageId.getSequence())
                 .protocol(protoRawMessage.getMetadata().getProtocol())
-                .content(body == null ? EMPTY_CONTENT : body.toByteArray());
+                .content(body.isEmpty() ? EMPTY_CONTENT : body.toByteArray());
 
         protoRawMessage.getMetadata().getPropertiesMap().forEach(builder::metadata);
         return builder.build();

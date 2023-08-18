@@ -132,7 +132,7 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
     private static void confirm(Confirmation confirmation) {
         try {
             confirmation.confirm();
-        } catch (IOException | RuntimeException e) {
+        } catch (Exception e) {
             LOGGER.error("Exception confirming message", e);
         }
     }
@@ -141,7 +141,7 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
     private static void reject(Confirmation confirmation) {
         try {
             confirmation.reject();
-        } catch (IOException | RuntimeException e) {
+        } catch (Exception e) {
             LOGGER.error("Exception rejecting message", e);
         }
     }

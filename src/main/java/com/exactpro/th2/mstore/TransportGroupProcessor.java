@@ -36,6 +36,7 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -63,10 +64,6 @@ public class TransportGroupProcessor extends AbstractMessageProcessor {
     public void start() {
         if (monitor == null) {
             monitor = router.subscribeAllWithManualAck(this::process);
-            if (monitor == null) {
-                LOGGER.error("Can not find queues for subscribe");
-                throw new RuntimeException("Can not find queues for subscriber");
-            }
             LOGGER.info("RabbitMQ subscription was successful");
         }
         super.start();

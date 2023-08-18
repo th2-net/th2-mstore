@@ -68,12 +68,7 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
 
     public void start() {
         if (monitor == null) {
-
             monitor = router.subscribeAllWithManualAck(this::process, ATTRIBUTES);
-            if (monitor == null) {
-                LOGGER.error("Can not find queues for subscribe");
-                throw new RuntimeException("Can not find queues for subscriber");
-            }
             LOGGER.info("RabbitMQ subscription was successful");
         }
         super.start();

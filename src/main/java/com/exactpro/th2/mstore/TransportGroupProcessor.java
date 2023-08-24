@@ -36,6 +36,7 @@ import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -63,12 +64,7 @@ public class TransportGroupProcessor extends AbstractMessageProcessor {
     public void start() {
         if (monitor == null) {
             monitor = router.subscribeAllWithManualAck(this::process);
-            if (monitor != null) {
-                LOGGER.info("RabbitMQ subscription was successful");
-            } else {
-                LOGGER.error("Can not find queues for subscribe");
-                throw new RuntimeException("Can not find queues for subscriber");
-            }
+            LOGGER.info("RabbitMQ subscription was successful");
         }
         super.start();
 
@@ -109,14 +105,14 @@ public class TransportGroupProcessor extends AbstractMessageProcessor {
                 Message<?> message = messageGroup.getMessages().get(0);
                 SessionKey sessionKey = createSessionKey(messageBatch, message.getId());
                 MessageOrderingProperties sequenceToTimestamp = extractOrderingProperties(message.getId());
-                sessions.computeIfAbsent(sessionKey, k -> sequenceToTimestamp);
+                sessions.computeIfAbsent(sessionKey, key -> sequenceToTimestamp);
             }
             groups.put(groupKey, groupedMessageBatchToStore.getLastTimestamp());
 
             if (deliveryMetadata.isRedelivered()) {
                 persist(new ConsolidatedBatch(groupedMessageBatchToStore, confirmation));
             } else {
-                storeMessages(groupedMessageBatchToStore, confirmation);
+                storeMessages(groupedMessageBatchToStore, groupKey, confirmation);
             }
         } catch (Exception ex) {
             LOGGER.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);

@@ -81,6 +81,7 @@ public class Configuration {
         return new Builder();
     }
 
+    @SuppressWarnings("unused")
     @JsonPOJOBuilder
     public static final class Builder {
         private static final boolean DEFAULT_REBATCHING = true;
@@ -179,6 +180,7 @@ public class Configuration {
             this.rebatching = rebatching;
             return this;
         }
+
 
         public Configuration build() {
             Configuration configuration = new Configuration();

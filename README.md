@@ -1,11 +1,13 @@
-# Overview (5.0.2)
+# Overview (5.2.1)
 
 Message store (mstore) is an important th2 component responsible for storing raw messages into Cradle. Please refer to [Cradle repository] (https://github.com/th2-net/cradleapi/blob/master/README.md) for more details. This component has a pin for listening messages via MQ.
 
-Users must mark a pin that produces raw messages in conn, read and hand boxes via the "store" attribute, in order to automatically connect that pin to mstore and to collect all messages into Cradle.
+## Protobuf raw message
 
-Raw message is a base entity of th2. All incoming / outgoing data is stored in this format
-Every raw message contains important parts:
+Users must mark a pin that produces protobuf raw messages in conn, read and hand boxes via the "store" attribute, in order to automatically connect that pin to mstore and to collect all messages into Cradle.
+
+Protobuf raw message is a base entity of th2. All incoming / outgoing data is stored in this format
+Every protobuf raw message contains important parts:
 * book - name of the book
 * session alias - unique identifier of business session.
 * session group - group id for this session
@@ -13,7 +15,22 @@ Every raw message contains important parts:
 * sequence number - incremental identifier.
 * data - byte representation of raw message 
 
-book, session alias, direction and sequence number are a **compound unique identifier** of raw messages within th2
+book, session alias, direction and sequence number are a **compound unique identifier** of protobuf raw messages within th2
+
+## Transport raw message
+
+Users must connect a pin that produces transport raw messages in conn, read and hand boxes via the general link approach, in order to manually connect that pin to mstore and to collect all messages into Cradle.
+
+Transport raw message is a new entity of th2. You can read more details about th2 transport protocol by the [link] (https://exactpro.atlassian.net/wiki/spaces/TH2/pages/1048838145/TH2+Transport+Protocol). All incoming / outgoing data is stored in this format
+Every protobuf raw message contains important parts:
+* book - name of the book
+* session alias - unique identifier of business session.
+* session group - group id for this session
+* direction - direction of message stream.
+* sequence number - incremental identifier.
+* data - byte representation of raw message
+
+book, session alias, direction and sequence number are a **compound unique identifier** of protobuf raw messages within th2
 
 # Configuration
 
@@ -72,6 +89,13 @@ spec:
     prefetchRatioToDrain: 0.8
     maxBatchSize: 200000
     termination-timeout: 5000
+  pins:
+    mq:
+      subscribers:
+      - name: transport
+        attributes:
+        - transport-group
+        - subscribe
   extended-settings:
     service:
       enabled: false
@@ -91,16 +115,22 @@ spec:
 This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
 
-## 5.0.2
+## 5.2.1
 
-+ Fixed the problem: batches for the same session group and different books are separate storing   
++ Fixed the problem: batches for the same session group and different books are separate storing
+
+## 5.2.0
+* Updated bom: `4.5.0-dev`
+* Updated common: `5.4.0-dev`
+
+## 5.1.0
++ Provided ability to process th2 transport messages
 
 ## 5.0.1
 
 + Stores message properties to cradle 
 
 ## 5.0.0
-
 + Migration to books/pages cradle 5.0.0
 
 ## 3.4.1

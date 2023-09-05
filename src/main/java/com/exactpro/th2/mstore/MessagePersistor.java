@@ -23,6 +23,7 @@ import com.exactpro.th2.taskutils.BlockingScheduledRetryableTaskQueue;
 import com.exactpro.th2.taskutils.FutureTracker;
 import com.exactpro.th2.taskutils.RetryScheduler;
 import com.exactpro.th2.taskutils.ScheduledRetryableTask;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.prometheus.client.Histogram;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -31,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import static java.util.Objects.requireNonNull;
@@ -40,13 +42,15 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
     private static final Logger LOGGER = LoggerFactory.getLogger(MessagePersistor.class);
     private static final String THREAD_NAME_PREFIX = "MessageBatch-persistor-thread-";
 
+    private static final ThreadFactory THREAD_FACTORY = new ThreadFactoryBuilder().setNameFormat("mstore-message-persistor-%d").build();
+
     private final BlockingScheduledRetryableTaskQueue<PersistenceTask<GroupedMessageBatchToStore>> taskQueue;
     private final int maxTaskRetries;
     private final CradleStorage cradleStorage;
     private final FutureTracker<Void> futures;
 
     private final MessagePersistorMetrics<PersistenceTask<GroupedMessageBatchToStore>> metrics;
-    private final ScheduledExecutorService samplerService;
+    private final ScheduledExecutorService executor;
 
     private volatile boolean stopped;
     private final Object signal = new Object();
@@ -62,7 +66,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         this.futures = new FutureTracker<>();
 
         this.metrics = new MessagePersistorMetrics<>(taskQueue);
-        this.samplerService = Executors.newSingleThreadScheduledExecutor();
+        this.executor = Executors.newScheduledThreadPool(Runtime.getRuntime().availableProcessors(), THREAD_FACTORY); // FIXME: make thread count configurable
     }
 
     public void start() throws InterruptedException {
@@ -81,7 +85,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
         LOGGER.info("Message batch persistor started. Maximum data size for tasks = {}, maximum number of tasks = {}",
                 taskQueue.getMaxDataSize(), taskQueue.getMaxTaskCount());
-        samplerService.scheduleWithFixedDelay(
+        executor.scheduleWithFixedDelay(
                 metrics::takeQueueMeasurements,
                 0,
                 1,
@@ -120,7 +124,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                                 task.getPayload().complete();
                             }
                         }
-                );
+                        , executor);
 
         futures.track(result);
     }
@@ -146,8 +150,8 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
             LOGGER.error("Cannot await all futures to be finished", ex);
         }
         try {
-            samplerService.shutdown();
-            samplerService.awaitTermination(1, TimeUnit.MINUTES);
+            executor.shutdown();
+            executor.awaitTermination(1, TimeUnit.MINUTES);
         } catch (InterruptedException e) {
         }
     }

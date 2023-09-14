@@ -15,8 +15,8 @@ plugins {
 }
 
 ext {
-    cradleVersion = '5.1.1-dev'
-    commonVersion = '5.4.0-dev'
+    cradleVersion = '5.1.3-dev'
+    commonVersion = '5.4.1-dev'
 }
 
 group = 'com.exactpro.th2'

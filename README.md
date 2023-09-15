@@ -1,4 +1,4 @@
-# Overview (5.2.2)
+# Overview (5.2.3)
 
 Message store (mstore) is an important th2 component responsible for storing raw messages into Cradle. Please refer to [Cradle repository] (https://github.com/th2-net/cradleapi/blob/master/README.md) for more details. This component has a pin for listening messages via MQ.
 
@@ -114,6 +114,10 @@ spec:
 
 This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
+
+## 5.2.3
+
+* Reverted cradle: `5.1.1-dev` because `5.1.3-dev` can't work with pages where `removed` field is null.
 
 ## 5.2.2
 

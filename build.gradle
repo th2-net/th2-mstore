@@ -17,6 +17,7 @@ plugins {
 ext {
     cradleVersion = '5.1.3-dev'
     commonVersion = '5.4.1-dev'
+    commonUtilsVersion = '2.2.0-dev'
 }
 
 group = 'com.exactpro.th2'
@@ -159,11 +160,17 @@ dependencies {
     api platform('com.exactpro.th2:bom:4.5.0')
 
     implementation "com.exactpro.th2:common:$commonVersion"
+    implementation("com.exactpro.th2:common-utils:$commonUtilsVersion") {
+        because("executor service utils is used")
+    }
     implementation 'com.exactpro.th2:task-utils:0.1.1'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 
     implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation('com.fasterxml.jackson.datatype:jackson-datatype-jsr310') {
+        because("Error collector serialise Intant values")
+    }
 
     implementation 'io.prometheus:simpleclient'
     implementation "org.jetbrains:annotations"

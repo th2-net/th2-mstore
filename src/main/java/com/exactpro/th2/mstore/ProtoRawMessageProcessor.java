@@ -56,13 +56,14 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
     private SubscriberMonitor monitor;
 
     public ProtoRawMessageProcessor(
+            @NotNull ErrorCollector errorCollector,
             @NotNull MessageRouter<RawMessageBatch> router,
             @NotNull CradleStorage cradleStorage,
             @NotNull Persistor<GroupedMessageBatchToStore> persistor,
             @NotNull Configuration configuration,
             @NotNull Integer prefetchCount
     ) {
-        super(cradleStorage, persistor, configuration, prefetchCount);
+        super(errorCollector, cradleStorage, persistor, configuration, prefetchCount);
         this.router = requireNonNull(router, "Message router can't be null");
     }
 
@@ -81,7 +82,7 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
             try {
                 monitor.unsubscribe();
             } catch (Exception e) {
-                LOGGER.error("Can not unsubscribe from queues", e);
+                errorCollector.collect(LOGGER, "Can not unsubscribe from queues", e);
             }
         }
         super.close();
@@ -121,7 +122,7 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
                 storeMessages(groupedMessageBatchToStore, groupKey, confirmation);
             }
         } catch (Exception ex) {
-            LOGGER.error("Cannot handle the batch of type {}, rejecting", messageBatch.getClass(), ex);
+            errorCollector.collect(LOGGER, "Cannot handle the batch of type " + messageBatch.getClass() + ", rejecting", ex);
             reject(confirmation);
         }
     }
@@ -132,24 +133,6 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
                 messageID.getTimestamp()
         );
     }
-
-    private static void confirm(Confirmation confirmation) {
-        try {
-            confirmation.confirm();
-        } catch (Exception e) {
-            LOGGER.error("Exception confirming message", e);
-        }
-    }
-
-
-    private static void reject(Confirmation confirmation) {
-        try {
-            confirmation.reject();
-        } catch (Exception e) {
-            LOGGER.error("Exception rejecting message", e);
-        }
-    }
-
 
     //FIXME: com.exactpro.th2.mstore.MessageProcessor.toCradleBatch() 98,242 ms (40.5%)
     private GroupedMessageBatchToStore toCradleBatch(String group, List<RawMessage> messagesList) throws CradleStorageException {

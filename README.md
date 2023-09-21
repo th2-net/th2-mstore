@@ -115,6 +115,11 @@ spec:
 This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
 
+## 5.2.4
+
+* Migrated to the cradle version with fixed load pages where `removed` field is null problem.
+* Updated cradle: `5.1.4-dev`
+
 ## 5.2.3
 
 * Reverted cradle: `5.1.1-dev` because `5.1.3-dev` can't work with pages where `removed` field is null.

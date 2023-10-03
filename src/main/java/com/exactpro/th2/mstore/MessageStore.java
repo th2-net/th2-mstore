@@ -25,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 import static com.exactpro.th2.common.metrics.CommonMetrics.LIVENESS_MONITOR;
@@ -33,6 +34,7 @@ import static com.exactpro.th2.common.utils.ExecutorServiceUtilsKt.shutdownGrace
 
 public class MessageStore {
     private static final Logger LOGGER = LoggerFactory.getLogger(MessageStore.class);
+    private static final ThreadFactory THREAD_FACTORY = new ThreadFactoryBuilder().setNameFormat("error-collector-%d").build();
 
     public static void main(String[] args) {
 
@@ -58,8 +60,7 @@ public class MessageStore {
             shutdownManager.registerResource(cradleManager);
             CradleStorage storage = cradleManager.getStorage();
 
-            ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(
-                    new ThreadFactoryBuilder().setNameFormat("error-collector-%d").build());
+            ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(THREAD_FACTORY);
             shutdownManager.registerResource(() -> shutdownGracefully(executor, 5, TimeUnit.SECONDS));
 
             ErrorCollector errorCollector = new ErrorCollector(executor, factory.getEventBatchRouter(), factory.getRootEventId());

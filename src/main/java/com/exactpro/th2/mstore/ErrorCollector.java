@@ -109,7 +109,7 @@ public class ErrorCollector implements AutoCloseable {
             if (map.isEmpty()) { return; }
 
             eventRouter.sendAll(Event.start()
-                            .name("mstore internal problem(s): " + calulateTotalQty(map.values()))
+                            .name("mstore internal problem(s): " + calculateTotalQty(map.values()))
                             .type("InternalError")
                             .status(Status.FAILED)
                             .bodyData(new BodyData(map))
@@ -121,8 +121,8 @@ public class ErrorCollector implements AutoCloseable {
     }
 
     private Map<String, ErrorMetadata> clear() {
+        lock.lock();
         try {
-            lock.lock();
             Map<String, ErrorMetadata> result = errors;
             errors = new HashMap<>();
             return result;
@@ -131,7 +131,7 @@ public class ErrorCollector implements AutoCloseable {
         }
     }
 
-    private static int calulateTotalQty(Collection<ErrorMetadata> errors) {
+    private static int calculateTotalQty(Collection<ErrorMetadata> errors) {
         return errors.stream()
                 .map(ErrorMetadata::getQuantity)
                 .reduce(0, Integer::sum);

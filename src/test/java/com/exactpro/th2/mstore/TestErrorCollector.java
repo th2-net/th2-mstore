@@ -119,7 +119,7 @@ class TestErrorCollector {
 
     @SuppressWarnings("DynamicRegexReplaceableByCompiledPattern")
     @Test
-    void testLogAndcollect() throws IOException {
+    void testLogAndCollect() throws IOException {
         RuntimeException exception = new RuntimeException("test-message");
         errorCollector.collect(logger, "A", exception);
         verify(logger).error(eq("A"), same(exception));

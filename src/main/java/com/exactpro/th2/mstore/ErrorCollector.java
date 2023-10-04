@@ -25,7 +25,6 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.datatype.jsr310.ser.InstantSerializer;
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,7 +36,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -47,7 +45,6 @@ import static java.util.Objects.requireNonNull;
 @SuppressWarnings("unused")
 public class ErrorCollector implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ErrorCollector.class);
-    private static final ThreadFactory THREAD_FACTORY = new ThreadFactoryBuilder().setNameFormat("error-collecor-%d").build();
     private final ScheduledFuture<?> drainFuture;
     private final MessageRouter<EventBatch> eventRouter;
     private final EventID rootEvent;

@@ -19,6 +19,7 @@ import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.errors.BookNotFoundException;
 import com.exactpro.cradle.errors.PageNotFoundException;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.th2.common.utils.ExecutorServiceUtilsKt;
 import com.exactpro.th2.taskutils.BlockingScheduledRetryableTaskQueue;
 import com.exactpro.th2.taskutils.FutureTracker;
 import com.exactpro.th2.taskutils.RetryScheduler;
@@ -74,6 +75,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
     public void start() throws InterruptedException {
         this.stopped = false;
         synchronized (signal) {
+            // FIXME: control resource
             new Thread(this, THREAD_NAME_PREFIX + this.hashCode()).start();
             signal.wait();
         }
@@ -153,12 +155,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         } catch (Exception ex) {
             errorCollector.collect(LOGGER, "Cannot await all futures to be finished", ex);
         }
-        try {
-            executor.shutdown();
-            executor.awaitTermination(1, TimeUnit.MINUTES);
-        } catch (InterruptedException e) {
-            errorCollector.collect(LOGGER, "Cannot gracefully shutdown message persistor executor", e);
-        }
+        ExecutorServiceUtilsKt.shutdownGracefully(executor, 1, TimeUnit.MINUTES);
     }
 
     private void logAndRetry(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, Throwable e) {

@@ -53,23 +53,25 @@ public class ErrorCollector implements AutoCloseable {
 
     public ErrorCollector(@NotNull ScheduledExecutorService executor,
                           @NotNull MessageRouter<EventBatch> eventRouter,
-                          EventID rootEvent,
+                          @NotNull EventID rootEvent,
                           long period,
-                          TimeUnit unit) {
+                          @NotNull TimeUnit unit) {
         this.eventRouter = requireNonNull(eventRouter, "Event router can't be null");
         this.rootEvent = requireNonNull(rootEvent, "Root event can't be null");
+        requireNonNull(unit, "Unit can't be null");
         this.drainFuture = requireNonNull(executor, "Executor can't be null")
                 .scheduleAtFixedRate(this::drain, period, period, unit);
     }
 
-    public ErrorCollector(@NotNull ScheduledExecutorService executor, @NotNull MessageRouter<EventBatch> eventRouter,
+    public ErrorCollector(@NotNull ScheduledExecutorService executor,
+                          @NotNull MessageRouter<EventBatch> eventRouter,
                           @NotNull EventID rootEvent) {
         this(executor, eventRouter, rootEvent, 1, TimeUnit.MINUTES);
     }
 
     /**
      * Log error and call the {@link #collect(String)}} method
-     * @param error is used as key indetifyer. Avoid put a lot of unique values
+     * @param error is used as key identifier. Avoid put a lot of unique values
      */
     public void collect(Logger logger, String error, Throwable cause) {
         logger.error(error, cause);
@@ -77,7 +79,7 @@ public class ErrorCollector implements AutoCloseable {
     }
 
     /**
-     * @param error is used as key indetifyer. Avoid put a lot of unique values
+     * @param error is used as key identifier. Avoid put a lot of unique values
      */
     public void collect(String error) {
         lock.lock();
@@ -113,7 +115,7 @@ public class ErrorCollector implements AutoCloseable {
                             .toBatchProto(rootEvent));
 
         } catch (IOException | RuntimeException e) {
-            LOGGER.error("Drain events task failyre", e);
+            LOGGER.error("Drain events task failure", e);
         }
     }
 

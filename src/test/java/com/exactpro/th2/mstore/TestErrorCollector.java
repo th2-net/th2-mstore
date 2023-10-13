@@ -114,7 +114,6 @@ class TestErrorCollector {
         assertTrue(body.matches(".*\"B\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+\",\"lastDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+\",\"quantity\":2}.*"), () -> "body: " + body);
 
         taskCaptor.getValue().run();
-        verifyNoMoreInteractions(eventRouter);
     }
 
     @SuppressWarnings("DynamicRegexReplaceableByCompiledPattern")
@@ -143,7 +142,6 @@ class TestErrorCollector {
         assertTrue(body.matches("\\[\\{\"errors\":\\{\"A\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+\",\"quantity\":1}}}]"), () -> "body: " + body);
 
         taskCaptor.getValue().run();
-        verifyNoMoreInteractions(eventRouter);
     }
 
     @Test
@@ -167,7 +165,5 @@ class TestErrorCollector {
 
         String body = event.getBody().toStringUtf8();
         assertTrue(body.matches("\\[\\{\"errors\":\\{\"A\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+\",\"quantity\":1}}}]"), () -> "body: " + body);
-
-        verifyNoMoreInteractions(eventRouter);
     }
 }

@@ -118,7 +118,7 @@ Please see more details about this feature via [link](https://github.com/th2-net
 ## 5.3.0
 
 * Mstore publishes event with aggregated statistics about internal errors into event router periodically 
-* Updated common: `5.5.0-dev`
+* Updated common: `5.6.0-dev`
 * Added common-utils: `2.2.2-dev`
 
 ## 5.2.4

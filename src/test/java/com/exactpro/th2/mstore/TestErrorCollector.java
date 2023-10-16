@@ -110,8 +110,8 @@ class TestErrorCollector {
         assertEquals(EventStatus.FAILED, event.getStatus());
 
         String body = event.getBody().toStringUtf8();
-        assertTrue(body.matches(".*\"A\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+\",\"quantity\":1}.*"), () -> "body: " + body);
-        assertTrue(body.matches(".*\"B\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+\",\"lastDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+\",\"quantity\":2}.*"), () -> "body: " + body);
+        assertTrue(body.matches(".*\"A\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+Z\",\"quantity\":1}.*"), () -> "body: " + body);
+        assertTrue(body.matches(".*\"B\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+Z\",\"lastDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+Z\",\"quantity\":2}.*"), () -> "body: " + body);
 
         taskCaptor.getValue().run();
     }
@@ -139,7 +139,7 @@ class TestErrorCollector {
         assertEquals(EventStatus.FAILED, event.getStatus());
 
         String body = event.getBody().toStringUtf8();
-        assertTrue(body.matches("\\[\\{\"errors\":\\{\"A\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+\",\"quantity\":1}}}]"), () -> "body: " + body);
+        assertTrue(body.matches("\\[\\{\"errors\":\\{\"A\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+Z\",\"quantity\":1}}}]"), () -> "body: " + body);
 
         taskCaptor.getValue().run();
     }
@@ -164,6 +164,6 @@ class TestErrorCollector {
         assertEquals(EventStatus.FAILED, event.getStatus());
 
         String body = event.getBody().toStringUtf8();
-        assertTrue(body.matches("\\[\\{\"errors\":\\{\"A\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+\",\"quantity\":1}}}]"), () -> "body: " + body);
+        assertTrue(body.matches("\\[\\{\"errors\":\\{\"A\":\\{\"firstDate\":\"\\d+-\\d+-\\d+T\\d+:\\d+:\\d+.\\d+Z\",\"quantity\":1}}}]"), () -> "body: " + body);
     }
 }

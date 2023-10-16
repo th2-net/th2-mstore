@@ -22,9 +22,6 @@ import com.exactpro.th2.common.grpc.EventBatch;
 import com.exactpro.th2.common.grpc.EventID;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.databind.annotation.JsonSerialize;
-import com.fasterxml.jackson.datatype.jsr310.ser.InstantSerializer;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -148,11 +145,7 @@ public class ErrorCollector implements AutoCloseable {
     }
 
     private static class ErrorMetadata {
-        @JsonSerialize(using = InstantSerializer.class)
-        @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS", timezone = "UTC")
         private final Instant firstDate = Instant.now();
-        @JsonSerialize(using = InstantSerializer.class)
-        @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSSSSS", timezone = "UTC")
         private Instant lastDate;
         private int quantity = 1;
 

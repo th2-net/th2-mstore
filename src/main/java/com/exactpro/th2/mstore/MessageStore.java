@@ -18,7 +18,6 @@ package com.exactpro.th2.mstore;
 import com.exactpro.cradle.CradleManager;
 import com.exactpro.cradle.CradleStorage;
 import com.exactpro.th2.common.schema.factory.CommonFactory;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,9 +50,6 @@ public class MessageStore {
             if (config == null) {
                 config = Configuration.createDefault();
             }
-
-            ObjectMapper mapper = new ObjectMapper();
-            LOGGER.info("Effective configuration:\n{}", mapper.writerWithDefaultPrettyPrinter().writeValueAsString(config));
 
             // Initialize Cradle
             CradleManager cradleManager = factory.getCradleManager();

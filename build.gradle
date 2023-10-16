@@ -16,7 +16,7 @@ plugins {
 
 ext {
     cradleVersion = '5.1.4-dev'
-    commonVersion = '5.5.0-dev'
+    commonVersion = '5.6.0-dev'
     commonUtilsVersion = '2.2.2-dev'
 }
 
@@ -89,7 +89,7 @@ tasks.withType(Sign).configureEach {
 }
 // disable running task 'initializeSonatypeStagingRepository' on a gitlab
 tasks.configureEach { task ->
-    if (task.name.equals('initializeSonatypeStagingRepository') &&
+    if (task.name == 'initializeSonatypeStagingRepository' &&
             !(project.hasProperty('sonatypeUsername') && project.hasProperty('sonatypePassword'))
     ) {
         task.enabled = false
@@ -168,9 +168,6 @@ dependencies {
     implementation 'com.google.protobuf:protobuf-java-util'
 
     implementation 'com.fasterxml.jackson.core:jackson-databind'
-    implementation('com.fasterxml.jackson.datatype:jackson-datatype-jsr310') {
-        because("Error collector serialise Intant values")
-    }
 
     implementation 'io.prometheus:simpleclient'
     implementation "org.jetbrains:annotations"

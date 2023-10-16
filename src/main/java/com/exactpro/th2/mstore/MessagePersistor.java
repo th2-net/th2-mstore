@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2023 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -19,6 +19,7 @@ import com.exactpro.cradle.CradleStorage;
 import com.exactpro.cradle.errors.BookNotFoundException;
 import com.exactpro.cradle.errors.PageNotFoundException;
 import com.exactpro.cradle.messages.GroupedMessageBatchToStore;
+import com.exactpro.th2.common.utils.ExecutorServiceUtilsKt;
 import com.exactpro.th2.taskutils.BlockingScheduledRetryableTaskQueue;
 import com.exactpro.th2.taskutils.FutureTracker;
 import com.exactpro.th2.taskutils.RetryScheduler;
@@ -47,6 +48,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
     private final BlockingScheduledRetryableTaskQueue<PersistenceTask<GroupedMessageBatchToStore>> taskQueue;
     private final int maxTaskRetries;
     private final CradleStorage cradleStorage;
+    private final ErrorCollector errorCollector;
     private final FutureTracker<Void> futures;
 
     private final MessagePersistorMetrics<PersistenceTask<GroupedMessageBatchToStore>> metrics;
@@ -55,13 +57,14 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
     private volatile boolean stopped;
     private final Object signal = new Object();
 
-    public MessagePersistor(@NotNull Configuration config, @NotNull CradleStorage cradleStorage) {
-        this(config, cradleStorage, (r) -> config.getRetryDelayBase() * 1_000_000 * (r + 1));
+    public MessagePersistor(@NotNull ErrorCollector errorCollector, @NotNull CradleStorage cradleStorage, @NotNull Configuration config) {
+        this(errorCollector, cradleStorage, (r) -> config.getRetryDelayBase() * 1_000_000 * (r + 1), config);
     }
 
-    public MessagePersistor(@NotNull Configuration config, @NotNull CradleStorage cradleStorage, RetryScheduler scheduler) {
+    public MessagePersistor(@NotNull ErrorCollector errorCollector, @NotNull CradleStorage cradleStorage, RetryScheduler scheduler, @NotNull Configuration config) {
         this.maxTaskRetries = config.getMaxRetryCount();
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
+        this.errorCollector = requireNonNull(errorCollector, "Error collector can't be null");
         this.taskQueue = new BlockingScheduledRetryableTaskQueue<>(config.getMaxTaskCount(), config.getMaxTaskDataSize(), scheduler);
         this.futures = new FutureTracker<>();
 
@@ -72,6 +75,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
     public void start() throws InterruptedException {
         this.stopped = false;
         synchronized (signal) {
+            // FIXME: control resource
             new Thread(this, THREAD_NAME_PREFIX + this.hashCode()).start();
             signal.wait();
         }
@@ -132,7 +136,9 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
     private void resolveTaskError(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, Throwable e) {
         if (e instanceof BookNotFoundException || e instanceof PageNotFoundException) {
             // If following exceptions were thrown there's no point in retrying
-            logAndFail(task, String.format("Can't retry after %s exception", e.getClass()), e);
+            logAndFail(task,
+                    "Can't retry after an exception",
+                    String.format("Can't retry after %s exception", e.getClass()), e);
         } else {
             logAndRetry(task, e);
         }
@@ -147,22 +153,18 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
             futures.awaitRemaining();
             LOGGER.info("All waiting futures are completed");
         } catch (Exception ex) {
-            LOGGER.error("Cannot await all futures to be finished", ex);
+            errorCollector.collect(LOGGER, "Cannot await all futures to be finished", ex);
         }
-        try {
-            executor.shutdown();
-            executor.awaitTermination(1, TimeUnit.MINUTES);
-        } catch (InterruptedException e) {
-        }
+        ExecutorServiceUtilsKt.shutdownGracefully(executor, 1, TimeUnit.MINUTES);
     }
 
     private void logAndRetry(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, Throwable e) {
 
         int retriesDone = task.getRetriesDone() + 1;
-        final GroupedMessageBatchToStore messageBatch = task.getPayload().data;
+        GroupedMessageBatchToStore messageBatch = task.getPayload().data;
 
         if (task.getRetriesLeft() > 0) {
-
+            errorCollector.collect("Failed to store the message batch for group '" + messageBatch.getGroup() + "' retries left, rescheduling");
             LOGGER.error("Failed to store the message batch for group '{}', {} retries left, rescheduling",
                     messageBatch.getGroup(),
                     task.getRetriesLeft(),
@@ -171,8 +173,8 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
             metrics.registerPersistenceRetry(retriesDone);
 
         } else {
-
             logAndFail(task,
+                    "Failed to store the message batch for a group '" + messageBatch.getGroup() + "', aborting after executions",
                     String.format("Failed to store the message batch for group '%s', aborting after %d executions",
                             messageBatch.getGroup(),
                             retriesDone),
@@ -180,10 +182,16 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         }
     }
 
-    private void logAndFail(ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task, String logMessage, Throwable e) {
+    private void logAndFail(
+            ScheduledRetryableTask<PersistenceTask<GroupedMessageBatchToStore>> task,
+            String errorKey,
+            String logMessage,
+            Throwable cause
+    ) {
         taskQueue.complete(task);
         metrics.registerAbortedPersistence();
-        LOGGER.error(logMessage, e);
+        errorCollector.collect(errorKey);
+        LOGGER.error(logMessage, cause);
         task.getPayload().fail();
     }
 
@@ -210,13 +218,15 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         }
 
         void complete() {
-            if (callback != null)
+            if (callback != null) {
                 callback.onSuccess(data);
+            }
         }
 
         void fail() {
-            if (callback != null)
+            if (callback != null) {
                 callback.onFail(data);
+            }
         }
     }
 }

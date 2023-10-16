@@ -46,7 +46,6 @@ import org.mockito.ArgumentCaptor;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -56,6 +55,7 @@ import static com.exactpro.th2.mstore.TransportGroupProcessor.toCradleDirection;
 import static com.exactpro.th2.mstore.TransportGroupProcessor.toCradleMessage;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -83,6 +83,7 @@ class TestTransportGroupProcessor {
     private final MessagePersistor persistor = mock(MessagePersistor.class);
     private final DeliveryMetadata deliveryMetadata = new DeliveryMetadata("", false);
     private final ManualAckDeliveryCallback.Confirmation confirmation = mock(ManualAckDeliveryCallback.Confirmation.class);
+    private final ErrorCollector errorCollector = mock(ErrorCollector.class);
 
     private final Random random = new Random();
 
@@ -131,14 +132,14 @@ class TestTransportGroupProcessor {
 
         MessageToStore cradleMessage = toCradleMessage(book, rawMessage);
 
-        Assertions.assertEquals(rawMessage.getProtocol(), cradleMessage.getProtocol());
-        Assertions.assertEquals(rawMessage.getMetadata(), cradleMessage.getMetadata().toMap());
-        Assertions.assertEquals(rawMessage.getId().getSessionAlias(), cradleMessage.getSessionAlias());
-        Assertions.assertEquals(book, cradleMessage.getBookId().getName());
-        Assertions.assertEquals(toCradleDirection(rawMessage.getId().getDirection()), cradleMessage.getDirection());
-        Assertions.assertEquals(rawMessage.getId().getTimestamp(), cradleMessage.getTimestamp());
-        Assertions.assertEquals(rawMessage.getId().getSequence(), cradleMessage.getSequence());
-        Assertions.assertArrayEquals(TransportUtilsKt.toByteArray(rawMessage.getBody()), cradleMessage.getContent());
+        assertEquals(rawMessage.getProtocol(), cradleMessage.getProtocol());
+        assertEquals(rawMessage.getMetadata(), cradleMessage.getMetadata().toMap());
+        assertEquals(rawMessage.getId().getSessionAlias(), cradleMessage.getSessionAlias());
+        assertEquals(book, cradleMessage.getBookId().getName());
+        assertEquals(toCradleDirection(rawMessage.getId().getDirection()), cradleMessage.getDirection());
+        assertEquals(rawMessage.getId().getTimestamp(), cradleMessage.getTimestamp());
+        assertEquals(rawMessage.getId().getSequence(), cradleMessage.getSequence());
+        assertArrayEquals(TransportUtilsKt.toByteArray(rawMessage.getBody()), cradleMessage.getContent());
     }
 
     @AfterEach
@@ -445,7 +446,7 @@ class TestTransportGroupProcessor {
             Persistor<GroupedMessageBatchToStore> persistor,
             Configuration configuration
     ) {
-        return new TransportGroupProcessor(routerMock, cradleStorageMock, persistor, configuration, 0);
+        return new TransportGroupProcessor(errorCollector, routerMock, cradleStorageMock, persistor, configuration, 0);
     }
 
     private RawMessage createMessage(String sessionAlias, Direction direction, long sequence) {

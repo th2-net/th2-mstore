@@ -75,6 +75,7 @@ public class TestMessagePersistor {
 
     private final CradleStorage storageMock = mock(CradleStorage.class);
     private final Callback<GroupedMessageBatchToStore> callback = mock(Callback.class);
+    private final ErrorCollector errorCollector = mock(ErrorCollector.class);
 
     private MessagePersistor persistor;
 
@@ -95,7 +96,7 @@ public class TestMessagePersistor {
                 .withRetryDelayBase(10L)
                 .withMaxTaskDataSize(MAX_MESSAGE_QUEUE_DATA_SIZE)
                 .build();
-        persistor = spy(new MessagePersistor(config, storageMock));
+        persistor = spy(new MessagePersistor(errorCollector, storageMock, config));
         persistor.start();
     }
 

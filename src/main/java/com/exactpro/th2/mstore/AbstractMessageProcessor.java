@@ -56,6 +56,7 @@ import static java.util.Objects.requireNonNull;
 
 public abstract class AbstractMessageProcessor implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractMessageProcessor.class);
+    protected final ErrorCollector errorCollector;
     protected final CradleStorage cradleStorage;
     private final ScheduledExecutorService drainExecutor = Executors.newSingleThreadScheduledExecutor();
     protected final Map<SessionKey, MessageOrderingProperties> sessions = new ConcurrentHashMap<>();
@@ -69,11 +70,13 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
     private final ManualDrainTrigger manualDrain;
 
     public AbstractMessageProcessor(
+            @NotNull ErrorCollector errorCollector,
             @NotNull CradleStorage cradleStorage,
             @NotNull Persistor<GroupedMessageBatchToStore> persistor,
             @NotNull Configuration configuration,
             @NotNull Integer prefetchCount
     ) {
+        this.errorCollector = requireNonNull(errorCollector, "Error collector can't be null");
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.persistor = requireNonNull(persistor, "Persistor can't be null");
         this.configuration = requireNonNull(configuration, "'Configuration' parameter");
@@ -103,13 +106,13 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
                 future.cancel(false);
             }
         } catch (RuntimeException ex) {
-            LOGGER.error("Cannot cancel drain task", ex);
+            errorCollector.collect(LOGGER, "Cannot cancel drain task", ex);
         }
 
         try {
             drain(true);
         } catch (RuntimeException ex) {
-            LOGGER.error("Cannot drain left batches during shutdown", ex);
+            errorCollector.collect(LOGGER, "Cannot drain left batches during shutdown", ex);
         }
 
         try {
@@ -122,27 +125,27 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
                 }
             }
         } catch (InterruptedException e) {
-            LOGGER.error("Cannot gracefully shutdown drain executor", e);
+            errorCollector.collect(LOGGER, "Cannot gracefully shutdown drain executor", e);
             Thread.currentThread().interrupt();
         } catch (RuntimeException e) {
-            LOGGER.error("Cannot gracefully shutdown drain executor", e);
+            errorCollector.collect(LOGGER, "Cannot gracefully shutdown drain executor", e);
         }
     }
 
-    private static void confirm(Confirmation confirmation) {
+    protected void confirm(Confirmation confirmation) {
         try {
             confirmation.confirm();
         } catch (Exception e) {
-            LOGGER.error("Exception confirming message", e);
+            errorCollector.collect(LOGGER, "Exception confirming message", e);
         }
     }
 
 
-    private static void reject(Confirmation confirmation) {
+    protected void reject(Confirmation confirmation) {
         try {
             confirmation.reject();
         } catch (Exception e) {
-            LOGGER.error("Exception rejecting message", e);
+            errorCollector.collect(LOGGER, "Exception rejecting message", e);
         }
     }
 
@@ -316,23 +319,14 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
     protected void persist(ConsolidatedBatch data) {
         GroupedMessageBatchToStore batch = data.batch;
         try (Histogram.Timer ignored = metrics.startMeasuringPersistenceLatency()) {
-            persistor.persist(batch, new Callback<>() {
-                @Override
-                public void onSuccess(GroupedMessageBatchToStore batch) {
-                    data.confirmations.forEach(AbstractMessageProcessor::confirm);
-                }
-
-                @Override
-                public void onFail(GroupedMessageBatchToStore batch) {
-                    data.confirmations.forEach(AbstractMessageProcessor::reject);
-                }
-            });
+            persistor.persist(batch, new ProcessorCallback(data));
         } catch (Exception e) {
+            errorCollector.collect("Exception storing batch for group \"" + batch.getGroup() + '\"');
             if (LOGGER.isErrorEnabled()) {
                 LOGGER.error("Exception storing batch for group \"{}\": {}", batch.getGroup(),
                         formatMessageBatchToStore(batch, false), e);
             }
-            data.confirmations.forEach(AbstractMessageProcessor::reject);
+            data.confirmations.forEach(this::reject);
         }
     }
 
@@ -430,6 +424,24 @@ public abstract class AbstractMessageProcessor implements AutoCloseable {
         }
         public static String identifySessionGroup(String sessionGroup, String sessionAlias) {
             return (sessionGroup == null || sessionGroup.isBlank()) ? requireNonBlank(sessionAlias, "'Session alias' parameter can not be blank") : sessionGroup;
+        }
+    }
+
+    private class ProcessorCallback implements Callback<GroupedMessageBatchToStore> {
+        private final ConsolidatedBatch data;
+
+        public ProcessorCallback(@NotNull ConsolidatedBatch data) {
+            this.data = requireNonNull(data, "Data can't be bull");
+        }
+
+        @Override
+        public void onSuccess(GroupedMessageBatchToStore batch) {
+            data.confirmations.forEach(AbstractMessageProcessor.this::confirm);
+        }
+
+        @Override
+        public void onFail(GroupedMessageBatchToStore batch) {
+            data.confirmations.forEach(AbstractMessageProcessor.this::reject);
         }
     }
 }

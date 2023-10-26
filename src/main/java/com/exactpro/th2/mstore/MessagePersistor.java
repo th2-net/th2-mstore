@@ -138,7 +138,10 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
             // If following exceptions were thrown there's no point in retrying
             logAndFail(task,
                     "Can't retry after an exception",
-                    String.format("Can't retry after %s exception", e.getClass()), e);
+                    String.format("Can't retry after %s exception for group '%s' in book '%s'",
+                            e.getClass(), task.getPayload().data.getGroup(), task.getPayload().data.getBookId().getName()),
+                    e
+            );
         } else {
             logAndRetry(task, e);
         }

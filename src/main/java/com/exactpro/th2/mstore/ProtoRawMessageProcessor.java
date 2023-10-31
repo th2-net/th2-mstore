@@ -122,7 +122,12 @@ public class ProtoRawMessageProcessor extends AbstractMessageProcessor {
                 storeMessages(groupedMessageBatchToStore, groupKey, confirmation);
             }
         } catch (Exception ex) {
-            errorCollector.collect(LOGGER, "Cannot handle the batch of type " + messageBatch.getClass() + ", rejecting", ex);
+            GroupKey group = messageBatch.getMessagesList().stream().findFirst()
+                    .map(msg -> createGroupKey(msg.getMetadata().getId()))
+                    .orElse(null);
+            String errorMessage = "Cannot handle the batch of type " + messageBatch.getClass()
+                    + " for group '" + group + "', rejecting";
+            errorCollector.collect(LOGGER, errorMessage, ex);
             reject(confirmation);
         }
     }

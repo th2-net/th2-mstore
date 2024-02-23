@@ -15,8 +15,8 @@ plugins {
 }
 
 ext {
-    cradleVersion = '5.1.4-dev'
-    commonVersion = '5.6.0-dev'
+    cradleVersion = '5.2.0-TH2-5165-+'
+    commonVersion = '5.8.0-dev'
     commonUtilsVersion = '2.2.2-dev'
 }
 
@@ -180,9 +180,9 @@ dependencies {
     implementation 'org.apache.commons:commons-lang3'
 
     implementation "org.slf4j:slf4j-api"
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
-    testImplementation 'org.mockito:mockito-junit-jupiter:5.4.0'
-    testImplementation 'org.mockito:mockito-core:5.3.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.10.0'
+    testImplementation 'org.mockito:mockito-core:5.10.0'
 }
 
 test {

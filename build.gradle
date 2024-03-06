@@ -15,7 +15,7 @@ plugins {
 }
 
 ext {
-    cradleVersion = '5.2.0-TH2-5165-+'
+    cradleVersion = '5.2.0-dev'
     commonVersion = '5.8.0-dev'
     commonUtilsVersion = '2.2.2-dev'
 }

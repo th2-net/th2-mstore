@@ -1,11 +1,11 @@
 plugins {
     id "application"
-    id "com.exactpro.th2.gradle.component" version "0.0.8"
+    id "com.exactpro.th2.gradle.component" version "0.1.1"
 }
 
 ext {
-    cradleVersion = '5.3.0-dev'
-    commonVersion = '5.12.0-dev'
+    cradleVersion = '5.4.1-dev'
+    commonVersion = '5.14.0-dev'
     commonUtilsVersion = '2.2.3-dev'
 }
 
@@ -61,9 +61,9 @@ dependencies {
     implementation 'org.apache.commons:commons-lang3'
 
     implementation "org.slf4j:slf4j-api"
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
-    testImplementation 'org.mockito:mockito-junit-jupiter:5.10.0'
-    testImplementation 'org.mockito:mockito-core:5.10.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.3'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.12.0'
+    testImplementation 'org.mockito:mockito-core:5.12.0'
 }
 
 test {

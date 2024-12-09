@@ -7,7 +7,6 @@ on:
 
 jobs:
   build:
-    # FIXME: migrate to main branch after https://github.com/th2-net/.github/pull/100 merge
-    uses: th2-net/.github/.github/workflows/compound-java-scan.yml@java-scan-workflow
+    uses: th2-net/.github/.github/workflows/compound-java-scan.yml@main
     secrets:
       nvd-api-key: ${{ secrets.NVD_APIKEY }}

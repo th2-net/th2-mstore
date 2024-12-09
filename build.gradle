@@ -38,7 +38,7 @@ javadoc {
 }
 
 dependencies {
-    implementation 'com.exactpro.th2:common:5.14.0-dev'
+    implementation 'com.exactpro.th2:common:5.15.0-windows-compatible-11379366273-569bd5b-SNAPSHOT'
     implementation('com.exactpro.th2:common-utils:2.3.0-dev') {
         because("executor service utils is used")
     }

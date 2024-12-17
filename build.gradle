@@ -42,7 +42,7 @@ dependencies {
     implementation('com.exactpro.th2:common-utils:2.3.0-dev') {
         because("executor service utils is used")
     }
-    implementation 'com.exactpro.th2:task-utils:0.1.1'
+    implementation 'com.exactpro.th2:task-utils:0.1.2'
 
     implementation 'com.google.protobuf:protobuf-java-util'
 

@@ -39,7 +39,7 @@ javadoc {
 
 dependencies {
     implementation 'com.exactpro.th2:common:5.14.0-dev'
-    implementation('com.exactpro.th2:common-utils:2.3.0-dev') {
+    implementation('com.exactpro.th2:common-utils:2.3.0-TH2-5231-10468612875-25adbb6-SNAPSHOT') {
         because("executor service utils is used")
     }
     implementation 'com.exactpro.th2:task-utils:0.1.1'

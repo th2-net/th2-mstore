@@ -11,7 +11,7 @@ on:
 
 jobs:
   build-job:
-    uses: th2-net/.github/.github/workflows/compound-java-dev.yml@pico-test
+    uses: th2-net/.github/.github/workflows/compound-java-dev.yml@main
     with:
       build-target: 'Docker'
       pico-test-enabled: true
@@ -19,3 +19,10 @@ jobs:
     secrets:
       docker-password: ${{ secrets.GITHUB_TOKEN }}
       nvd-api-key: ${{ secrets.NVD_APIKEY }}
+  pico-test:
+    uses: peter-evans/repository-dispatch@v3
+    with:
+      token: ${{ secrets.GITHUB_TOKEN }}
+      repository: th2-net/th2-pico-test
+      event-type: run-pico-test-workflow
+      client-payload: '{"component-image": "${{ github.repository }}", "component-image-version": "5.9.0-dev"}'

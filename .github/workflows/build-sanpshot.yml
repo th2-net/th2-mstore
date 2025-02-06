@@ -21,7 +21,7 @@ jobs:
       nvd-api-key: ${{ secrets.NVD_APIKEY }}
   pico-test:
     steps:
-      uses: peter-evans/repository-dispatch@v3
+    - uses: peter-evans/repository-dispatch@v3
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         repository: th2-net/th2-pico-test

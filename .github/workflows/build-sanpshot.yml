@@ -20,6 +20,7 @@ jobs:
       docker-password: ${{ secrets.GITHUB_TOKEN }}
       nvd-api-key: ${{ secrets.NVD_APIKEY }}
   pico-test:
+    runs-on: ubuntu-latest
     steps:
     - uses: peter-evans/repository-dispatch@v3
       with:

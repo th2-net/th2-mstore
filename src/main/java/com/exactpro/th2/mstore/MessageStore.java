@@ -59,7 +59,7 @@ public class MessageStore {
             ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(THREAD_FACTORY);
             shutdownManager.registerResource(() -> shutdownGracefully(executor, 5, TimeUnit.SECONDS));
 
-            ErrorCollector errorCollector = new ErrorCollector(executor, factory.getEventBatchRouter(), factory.getRootEventId());
+            ErrorCollector errorCollector = EventErrorCollector.create(executor, factory.getEventBatchRouter(), factory.getRootEventId());
             shutdownManager.registerResource(errorCollector);
 
             // Initialize persistor

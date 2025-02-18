@@ -6,7 +6,7 @@ jobs:
   build:
     uses: th2-net/.github/.github/workflows/compound-java.yml@main
     with:
-      build-target: 'Docker'
+      build-target: 'Docker,Sonatype'
       devRelease: true
       createTag: true
       docker-username: ${{ github.actor }}

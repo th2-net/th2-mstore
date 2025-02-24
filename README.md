@@ -45,7 +45,7 @@ book, session alias, direction and sequence number are a **compound unique ident
   "drain-interval" : 100,
   "prefetchRatioToDrain" : 0.8,
   "maxBatchSize" : 200000,
-  
+  "persisotr-termination-timeout" : 1000,
   "termination-timeout" : 1000
 }
 ```
@@ -59,6 +59,7 @@ book, session alias, direction and sequence number are a **compound unique ident
 + _prefetchRatioToDrain_ - Threshold ratio of fetched messages to RabbitMQ prefetch size to force aggregated batch draining.
 + _maxBatchSize_ - Maximum aggregated batch size in case of re-batching
 + _termination-timeout_ - Timeout in milliseconds to await for the inner drain scheduler to finish all the tasks. The default value is 5000.
++ _persisotr-termination-timeout_ - The timeout in milliseconds to await for the persisotr thread complete. The default value is 5000.
 
 If some of these parameters are not provided, mstore will use default(undocumented) value.
 If _maxTaskCount_ or _maxTaskDataSize_ limits are reached during processing, mstore will pause processing new messages
@@ -89,6 +90,7 @@ spec:
     prefetchRatioToDrain: 0.8
     maxBatchSize: 200000
     termination-timeout: 5000
+    persisotr-termination-timeout: 5000
   pins:
     mq:
       subscribers:

@@ -48,6 +48,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
     private final BlockingScheduledRetryableTaskQueue<PersistenceTask<GroupedMessageBatchToStore>> taskQueue;
     private final int maxTaskRetries;
+    private final long terminationTimeout;
     private final CradleStorage cradleStorage;
     private final ErrorCollector errorCollector;
     private final FutureTracker<Void> futures;
@@ -68,6 +69,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.errorCollector = requireNonNull(errorCollector, "Error collector can't be null");
         this.taskQueue = new BlockingScheduledRetryableTaskQueue<>(config.getMaxTaskCount(), config.getMaxTaskDataSize(), scheduler);
+        this.terminationTimeout = config.getPersisotrTerminationTimeout();
         this.futures = new FutureTracker<>();
 
         this.metrics = new MessagePersistorMetrics<>(taskQueue);
@@ -167,7 +169,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
             Thread thread = persistor.get();
             if (thread != null && thread.isAlive()) {
                 thread.interrupt();
-                thread.join(5000);
+                thread.join(terminationTimeout);
                 if (thread.isAlive()) {
                     LOGGER.warn("Persistor thread hasn't stopped");
                 } else {

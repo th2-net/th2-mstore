@@ -1,4 +1,4 @@
-# Overview (5.9.0)
+# Overview (5.10.0)
 
 Message store (mstore) is an important th2 component responsible for storing raw messages into Cradle. Please refer to [Cradle repository] (https://github.com/th2-net/cradleapi/blob/master/README.md) for more details. This component has a pin for listening messages via MQ.
 
@@ -45,7 +45,7 @@ book, session alias, direction and sequence number are a **compound unique ident
   "drain-interval" : 100,
   "prefetchRatioToDrain" : 0.8,
   "maxBatchSize" : 200000,
-  
+  "persisotr-termination-timeout" : 1000,
   "termination-timeout" : 1000
 }
 ```
@@ -59,6 +59,7 @@ book, session alias, direction and sequence number are a **compound unique ident
 + _prefetchRatioToDrain_ - Threshold ratio of fetched messages to RabbitMQ prefetch size to force aggregated batch draining.
 + _maxBatchSize_ - Maximum aggregated batch size in case of re-batching
 + _termination-timeout_ - Timeout in milliseconds to await for the inner drain scheduler to finish all the tasks. The default value is 5000.
++ _persisotr-termination-timeout_ - The timeout in milliseconds to await for the persisotr thread complete. The default value is 5000.
 
 If some of these parameters are not provided, mstore will use default(undocumented) value.
 If _maxTaskCount_ or _maxTaskDataSize_ limits are reached during processing, mstore will pause processing new messages
@@ -89,6 +90,7 @@ spec:
     prefetchRatioToDrain: 0.8
     maxBatchSize: 200000
     termination-timeout: 5000
+    persisotr-termination-timeout: 5000
   pins:
     mq:
       subscribers:
@@ -116,6 +118,13 @@ This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
 
 # Release notes
+
+## 5.10.0
+* Publish mstore as moven artifact
+* Updated
+  * th2 gradle plugin `0.2.1` based on bom: `4.10.0`
+    * Added suppressions:
+      * CVE-2025-25193, CVE-2025-24970 - These vulnerabilities does not affect us because this component don’t use netty.
 
 ## 5.9.0
 * Updated

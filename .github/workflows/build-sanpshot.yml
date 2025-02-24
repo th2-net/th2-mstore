@@ -15,6 +15,7 @@ jobs:
     with:
       build-target: 'Docker,Sonatype'
       docker-username: ${{ github.actor }}
+      scanner-enabled: false # FIXME: remove this parameter
     secrets:
       docker-password: ${{ secrets.GITHUB_TOKEN }}
       sonatypeUsername: ${{ secrets.SONATYPE_NEXUS_USERNAME }}

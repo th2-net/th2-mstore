@@ -10,9 +10,9 @@ ext {
 group = 'com.exactpro.th2'
 version = release_version
 
-sourceCompatibility = 11
-targetCompatibility = 11
-
+th2JavaRelease {
+    targetJavaVersion.set(JavaVersion.VERSION_11)
+}
 
 repositories {
     mavenCentral()

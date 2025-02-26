@@ -117,6 +117,12 @@ Please see more details about this feature via [link](https://github.com/th2-net
 
 # Release notes
 
+## next release
+* Updated:
+  * th2 gradle plugin `0.2.2` based on bom: `4.10.0`
+    * Added suppressions:
+      * CVE-2025-25193, CVE-2025-24970 - This vulnerability does not affect us because the component don’t use netty.
+
 ## 5.9.0
 * Updated
   * th2 gradle plugin `0.1.6` based on bom: `4.9.0`

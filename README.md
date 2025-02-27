@@ -120,11 +120,11 @@ Please see more details about this feature via [link](https://github.com/th2-net
 # Release notes
 
 ## 5.10.0
-* Publish mstore as moven artifact
+* Publish mstore as moven artifact.
+* Prepared MessagePersistor class for using in other project.
 * Updated
-  * th2 gradle plugin `0.2.1` based on bom: `4.10.0`
-    * Added suppressions:
-      * CVE-2025-25193, CVE-2025-24970 - These vulnerabilities does not affect us because this component don’t use netty.
+    * th2 gradle plugin `0.2.3` based on bom: `4.11.0`
+    * task-utils: `0.1.3`
 
 ## 5.9.0
 * Updated

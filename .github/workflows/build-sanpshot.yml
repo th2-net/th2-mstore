@@ -5,7 +5,6 @@ on:
     branches-ignore:
       - master
       - version-*
-      - dependabot**
     paths-ignore:
       - README.md
 
@@ -15,7 +14,6 @@ jobs:
     with:
       build-target: 'Docker,Sonatype'
       docker-username: ${{ github.actor }}
-      scanner-enabled: false # FIXME: remove this parameter
     secrets:
       docker-password: ${{ secrets.GITHUB_TOKEN }}
       sonatypeUsername: ${{ secrets.SONATYPE_NEXUS_USERNAME }}
@@ -23,3 +21,6 @@ jobs:
       sonatypeSigningKey: ${{ secrets.SONATYPE_GPG_ARMORED_KEY }}
       sonatypeSigningPassword: ${{ secrets.SONATYPE_SIGNING_PASSWORD }}
       nvd-api-key: ${{ secrets.NVD_APIKEY }}
+      cisa-domain: ${{ secrets.CISA_DOMAIN }}
+      cisa-user: ${{ secrets.CISA_USER }}
+      cisa-password: ${{ secrets.CISA_PWD }}

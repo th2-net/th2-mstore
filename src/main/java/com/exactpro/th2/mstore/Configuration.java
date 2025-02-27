@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2022 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2025 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 public class Configuration {
     private long  drainInterval;
     private long  terminationTimeout;
+    private long  persisotrTerminationTimeout;
     private int   maxTaskCount;
     private long  maxTaskDataSize;
     private int   maxRetryCount;
@@ -47,6 +48,11 @@ public class Configuration {
     @JsonProperty("termination-timeout")
     public long getTerminationTimeout() {
         return terminationTimeout;
+    }
+
+    @JsonProperty("persisotr-termination-timeout")
+    public long getPersisotrTerminationTimeout() {
+        return persisotrTerminationTimeout;
     }
 
     public Long getMaxTaskDataSize() {
@@ -101,6 +107,10 @@ public class Configuration {
         @JsonPropertyDescription("The timeout in milliseconds to await for the inner drain scheduler to finish all the tasks")
         private long terminationTimeout;
 
+        @JsonProperty("persisotr-termination-timeout")
+        @JsonPropertyDescription("The timeout in milliseconds to await for the persisotr thread complete")
+        private long persisotrTerminationTimeout;
+
         @JsonProperty("maxTaskCount")
         private Integer maxTaskCount;
 
@@ -126,6 +136,7 @@ public class Configuration {
         private Builder() {
             drainInterval = DEFAULT_DRAIN_INTERVAL;
             terminationTimeout = DEFAULT_WAIT_TIMEOUT;
+            persisotrTerminationTimeout = DEFAULT_WAIT_TIMEOUT;
             maxTaskDataSize = Runtime.getRuntime().totalMemory()  / 2;
             maxTaskCount = DEFAULT_MAX_TASK_COUNT;
             maxRetryCount = DEFAULT_MAX_TASK_RETRIES;
@@ -143,6 +154,11 @@ public class Configuration {
 
         public Builder withTerminationTimeout(long terminationTimeout) {
             this.terminationTimeout = terminationTimeout;
+            return this;
+        }
+
+        public Builder withPersisotrTerminationTimeout(long terminationTimeout) {
+            this.persisotrTerminationTimeout = terminationTimeout;
             return this;
         }
 
@@ -186,6 +202,7 @@ public class Configuration {
             Configuration configuration = new Configuration();
             configuration.drainInterval = drainInterval;
             configuration.terminationTimeout = terminationTimeout;
+            configuration.persisotrTerminationTimeout = persisotrTerminationTimeout;
             configuration.maxRetryCount = this.maxRetryCount;
             configuration.maxTaskDataSize = this.maxTaskDataSize;
             configuration.retryDelayBase = this.retryDelayBase;

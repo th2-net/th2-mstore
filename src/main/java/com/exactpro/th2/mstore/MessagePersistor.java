@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2025 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -35,6 +35,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.Objects.requireNonNull;
 
@@ -47,6 +48,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
     private final BlockingScheduledRetryableTaskQueue<PersistenceTask<GroupedMessageBatchToStore>> taskQueue;
     private final int maxTaskRetries;
+    private final long terminationTimeout;
     private final CradleStorage cradleStorage;
     private final ErrorCollector errorCollector;
     private final FutureTracker<Void> futures;
@@ -56,6 +58,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
 
     private volatile boolean stopped;
     private final Object signal = new Object();
+    private final AtomicReference<Thread> persistor = new AtomicReference<>();
 
     public MessagePersistor(@NotNull ErrorCollector errorCollector, @NotNull CradleStorage cradleStorage, @NotNull Configuration config) {
         this(errorCollector, cradleStorage, (r) -> config.getRetryDelayBase() * 1_000_000 * (r + 1), config);
@@ -66,6 +69,7 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
         this.cradleStorage = requireNonNull(cradleStorage, "Cradle storage can't be null");
         this.errorCollector = requireNonNull(errorCollector, "Error collector can't be null");
         this.taskQueue = new BlockingScheduledRetryableTaskQueue<>(config.getMaxTaskCount(), config.getMaxTaskDataSize(), scheduler);
+        this.terminationTimeout = config.getPersisotrTerminationTimeout();
         this.futures = new FutureTracker<>();
 
         this.metrics = new MessagePersistorMetrics<>(taskQueue);
@@ -73,10 +77,16 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
     }
 
     public void start() throws InterruptedException {
+        if (persistor.get() != null) {
+            throw new IllegalStateException("Message persistor has been already started once");
+        }
         this.stopped = false;
         synchronized (signal) {
-            // FIXME: control resource
-            new Thread(this, THREAD_NAME_PREFIX + this.hashCode()).start();
+            Thread thread = new Thread(this, THREAD_NAME_PREFIX + this.hashCode());
+            if (!persistor.compareAndSet(null, thread)) {
+                throw new IllegalStateException("Message persistor is already started");
+            }
+            thread.start();
             signal.wait();
         }
     }
@@ -138,7 +148,10 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
             // If following exceptions were thrown there's no point in retrying
             logAndFail(task,
                     "Can't retry after an exception",
-                    String.format("Can't retry after %s exception", e.getClass()), e);
+                    String.format("Can't retry after %s exception for group '%s' in book '%s'",
+                            e.getClass(), task.getPayload().data.getGroup(), task.getPayload().data.getBookId().getName()),
+                    e
+            );
         } else {
             logAndRetry(task, e);
         }
@@ -152,6 +165,17 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
             stopped = true;
             futures.awaitRemaining();
             LOGGER.info("All waiting futures are completed");
+
+            Thread thread = persistor.get();
+            if (thread != null && thread.isAlive()) {
+                thread.interrupt();
+                thread.join(terminationTimeout);
+                if (thread.isAlive()) {
+                    LOGGER.warn("Persistor thread hasn't been stopped");
+                } else {
+                    LOGGER.info("Persistor thread has been stopped");
+                }
+            }
         } catch (Exception ex) {
             errorCollector.collect(LOGGER, "Cannot await all futures to be finished", ex);
         }

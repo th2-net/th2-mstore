@@ -1,4 +1,4 @@
-# Overview (5.3.0)
+# Overview (5.10.0)
 
 Message store (mstore) is an important th2 component responsible for storing raw messages into Cradle. Please refer to [Cradle repository] (https://github.com/th2-net/cradleapi/blob/master/README.md) for more details. This component has a pin for listening messages via MQ.
 
@@ -45,7 +45,7 @@ book, session alias, direction and sequence number are a **compound unique ident
   "drain-interval" : 100,
   "prefetchRatioToDrain" : 0.8,
   "maxBatchSize" : 200000,
-  
+  "persisotr-termination-timeout" : 1000,
   "termination-timeout" : 1000
 }
 ```
@@ -59,6 +59,7 @@ book, session alias, direction and sequence number are a **compound unique ident
 + _prefetchRatioToDrain_ - Threshold ratio of fetched messages to RabbitMQ prefetch size to force aggregated batch draining.
 + _maxBatchSize_ - Maximum aggregated batch size in case of re-batching
 + _termination-timeout_ - Timeout in milliseconds to await for the inner drain scheduler to finish all the tasks. The default value is 5000.
++ _persisotr-termination-timeout_ - The timeout in milliseconds to await for the persisotr thread complete. The default value is 5000.
 
 If some of these parameters are not provided, mstore will use default(undocumented) value.
 If _maxTaskCount_ or _maxTaskDataSize_ limits are reached during processing, mstore will pause processing new messages
@@ -89,6 +90,7 @@ spec:
     prefetchRatioToDrain: 0.8
     maxBatchSize: 200000
     termination-timeout: 5000
+    persisotr-termination-timeout: 5000
   pins:
     mq:
       subscribers:
@@ -114,6 +116,54 @@ spec:
 
 This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
+
+# Release notes
+
+## 5.10.0
+* Publish mstore as moven artifact.
+* Prepared MessagePersistor class for using in other project.
+* Added `persisotr-termination-timeout` option
+* Updated
+    * th2 gradle plugin `0.2.4` based on bom: `4.11.0`
+    * task-utils: `0.1.3`
+
+## 5.9.0
+* Updated
+  * th2 gradle plugin `0.1.6` based on bom: `4.9.0`
+  * cradle api: `5.4.4-dev`
+  * common-utils: `2.3.0-dev`
+
+## 5.8.0
+* Updated th2 gradle plugin `0.1.1`
+* Updated common: `5.14.0-dev`
+* Updated cradle api: `5.4.1-dev`
+
+## 5.7.0
+
+* Migrated to th2 gradle plugin `0.0.8`
+* Updated common: `5.12.0-dev`
+* Updated common-utils: `2.2.3-dev`
+
+## 5.6.0
+
+* Migrated to th2 gradle plugin `0.0.6` 
+* Updated bom: `4.6.1`
+* Updated common: `5.11.0-dev`
+* Updated cradle api: `5.3.0-dev`
+
+## 5.5.0
+
+* Updated bom: `4.6.0` 
+* Updated common: `5.9.1-dev` 
+
+## 5.4.0
+
+* Updated cradle api: `5.2.0-dev`
+* Updated common: `5.8.0-dev`
+
+## 5.3.1
+
+* Add information about group and book into error message during batch processing
 
 ## 5.3.0
 

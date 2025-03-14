@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2025 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -47,10 +47,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static com.exactpro.th2.common.utils.ExecutorServiceUtilsKt.shutdownGracefully;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.after;
@@ -205,7 +205,7 @@ public class TestMessagePersistor {
 
     @Test
     @DisplayName("Message persistence is queued by count")
-    public void testMessageCountQueueing() throws CradleStorageException {
+    public void testMessageCountQueueing() throws CradleStorageException, InterruptedException {
 
         final long storeExecutionTime = MESSAGE_PERSIST_TIMEOUT * 3;
         final long totalExecutionTime = MESSAGE_PERSIST_TIMEOUT * 5;
@@ -247,13 +247,14 @@ public class TestMessagePersistor {
         verify(callback, after(totalExecutionTime).times(totalMessages)).onSuccess(any());
         verify(callback, after(totalExecutionTime).times(0)).onFail(any());
 
-        shutdownGracefully(executor,1, TimeUnit.SECONDS);
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS), "Executor didn't terminate according to a timeout");
     }
 
 
     @Test
     @DisplayName("Message persistence is queued by message sizes")
-    public void testMessageSizeQueueing() throws CradleStorageException {
+    public void testMessageSizeQueueing() throws CradleStorageException, InterruptedException {
 
         final long storeExecutionTime = MESSAGE_PERSIST_TIMEOUT * 3;
         final long totalExecutionTime = MESSAGE_PERSIST_TIMEOUT * 6;
@@ -264,7 +265,7 @@ public class TestMessagePersistor {
         ExecutorService executor = Executors.newFixedThreadPool(totalMessages * 2);
 
         // create events
-        final int messageContentSize = (int) (MAX_MESSAGE_QUEUE_DATA_SIZE / messageQueueCapacity * 0.90);
+        final int messageContentSize = (int) ((double) MAX_MESSAGE_QUEUE_DATA_SIZE / messageQueueCapacity * 0.90);
         byte[] content = new byte[messageContentSize];
 
         Instant timestamp = Instant.now();
@@ -300,10 +301,12 @@ public class TestMessagePersistor {
         verify(callback, times(totalMessages)).onSuccess(any());
         verify(callback, times(0)).onFail(any());
 
-        shutdownGracefully(executor,1, TimeUnit.SECONDS);
+        executor.shutdown();
+        assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS), "Executor didn't terminate according to a timeout");
     }
 
 
+    @SuppressWarnings("SameParameterValue")
     private void pause(long millis) {
         try {
             Thread.sleep(millis);
@@ -313,6 +316,7 @@ public class TestMessagePersistor {
     }
 
 
+    @SuppressWarnings("SameParameterValue")
     private static MessageToStore createMessage(
             long sequence,
             Instant timestamp,

@@ -94,11 +94,9 @@ class TestErrorCollector {
             "60,SECONDS",
             "1,MINUTES",
     })
-    void testDrainTaskParameters(String period, String timeUnit) throws Exception {
-        long periodValue = Long.parseLong(period);
-        TimeUnit timeUnitValue = TimeUnit.valueOf(timeUnit);
-        try(ErrorCollector ignored = EventErrorCollector.create(executor, eventRouter, rootEvent, periodValue, timeUnitValue)) {
-            verify(executor).scheduleAtFixedRate(taskCaptor.capture(), eq(periodValue), eq(periodValue), eq(timeUnitValue));
+    void testDrainTaskParameters(long period, TimeUnit timeUnit) throws Exception {
+        try(ErrorCollector ignored = EventErrorCollector.create(executor, eventRouter, rootEvent, period, timeUnit)) {
+            verify(executor).scheduleAtFixedRate(taskCaptor.capture(), eq(period), eq(period), eq(timeUnit));
         }
         verify(future).cancel(eq(true));
     }

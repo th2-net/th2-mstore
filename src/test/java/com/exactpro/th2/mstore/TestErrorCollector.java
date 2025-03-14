@@ -94,11 +94,13 @@ class TestErrorCollector {
             "60,SECONDS",
             "1,MINUTES",
     })
-    void testDrainTaskParameters(String period, String timeUnit) {
+    void testDrainTaskParameters(String period, String timeUnit) throws Exception {
         long periodValue = Long.parseLong(period);
         TimeUnit timeUnitValue = TimeUnit.valueOf(timeUnit);
-        EventErrorCollector.create(executor, eventRouter, rootEvent, periodValue, timeUnitValue);
-        verify(executor).scheduleAtFixedRate(taskCaptor.capture(), eq(periodValue), eq(periodValue), eq(timeUnitValue));
+        try(ErrorCollector ignored = EventErrorCollector.create(executor, eventRouter, rootEvent, periodValue, timeUnitValue)) {
+            verify(executor).scheduleAtFixedRate(taskCaptor.capture(), eq(periodValue), eq(periodValue), eq(timeUnitValue));
+        }
+        verify(future).cancel(eq(true));
     }
 
     @SuppressWarnings("DynamicRegexReplaceableByCompiledPattern")

@@ -233,7 +233,7 @@ public class TestMessagePersistor {
         verify(callback, after(totalExecutionTime).times(0)).onFail(any());
 
         executor.shutdown();
-        assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS));
+        assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS), "Executor didn't terminate according to a timeout");
     }
 
 
@@ -287,7 +287,7 @@ public class TestMessagePersistor {
         verify(callback, times(0)).onFail(any());
 
         executor.shutdown();
-        assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS));
+        assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS), "Executor didn't terminate according to a timeout");
     }
 
 

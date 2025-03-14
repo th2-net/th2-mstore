@@ -1,8 +1,8 @@
 plugins {
     id "application"
     id "maven-publish"
-    id "com.exactpro.th2.gradle.publish" version "0.2.3"
-    id "com.exactpro.th2.gradle.component" version "0.2.3"
+    id "com.exactpro.th2.gradle.publish" version "0.2.4"
+    id "com.exactpro.th2.gradle.component" version "0.2.4"
 }
 
 ext {
@@ -11,10 +11,6 @@ ext {
 
 group = 'com.exactpro.th2'
 version = release_version
-
-th2JavaRelease {
-    targetJavaVersion.set(JavaVersion.VERSION_11)
-}
 
 repositories {
     mavenCentral()

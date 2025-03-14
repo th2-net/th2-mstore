@@ -124,7 +124,7 @@ Please see more details about this feature via [link](https://github.com/th2-net
 * Prepared MessagePersistor class for using in other project.
 * Added `persisotr-termination-timeout` option
 * Updated
-    * th2 gradle plugin `0.2.3` based on bom: `4.11.0`
+    * th2 gradle plugin `0.2.4` based on bom: `4.11.0`
     * task-utils: `0.1.3`
 
 ## 5.9.0

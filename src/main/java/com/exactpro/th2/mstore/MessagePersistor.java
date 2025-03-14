@@ -171,9 +171,9 @@ public class MessagePersistor implements Runnable, AutoCloseable, Persistor<Grou
                 thread.interrupt();
                 thread.join(terminationTimeout);
                 if (thread.isAlive()) {
-                    LOGGER.warn("Persistor thread hasn't stopped");
+                    LOGGER.warn("Persistor thread hasn't been stopped");
                 } else {
-                    LOGGER.info("Persistor thread has stopped");
+                    LOGGER.info("Persistor thread has been stopped");
                 }
             }
         } catch (Exception ex) {

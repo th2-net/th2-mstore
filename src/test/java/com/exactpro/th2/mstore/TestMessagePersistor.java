@@ -1,5 +1,5 @@
 /*
- * Copyright 2020-2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2020-2025 Exactpro (Exactpro Systems Limited)
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -47,6 +47,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.doReturn;
@@ -70,7 +71,6 @@ public class TestMessagePersistor {
     private static final int MAX_MESSAGE_QUEUE_TASK_SIZE = 8;
     private static final long MAX_MESSAGE_QUEUE_DATA_SIZE = 10_000L;
 
-    private static final long STORE_ACTION_REJECTION_THRESHOLD = 30000L;
     private static final BookId BOOK_ID = new BookId("test-book");
 
     private final CradleStorage storageMock = mock(CradleStorage.class);
@@ -233,7 +233,7 @@ public class TestMessagePersistor {
         verify(callback, after(totalExecutionTime).times(0)).onFail(any());
 
         executor.shutdown();
-        executor.awaitTermination(0, TimeUnit.MILLISECONDS);
+        assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS), "Executor didn't terminate according to a timeout");
     }
 
 
@@ -250,7 +250,7 @@ public class TestMessagePersistor {
         ExecutorService executor = Executors.newFixedThreadPool(totalMessages * 2);
 
         // create events
-        final int messageContentSize = (int) (MAX_MESSAGE_QUEUE_DATA_SIZE / messageQueueCapacity * 0.90);
+        final int messageContentSize = (int) ((double) MAX_MESSAGE_QUEUE_DATA_SIZE / messageQueueCapacity * 0.90);
         byte[] content = new byte[messageContentSize];
 
         Instant timestamp = Instant.now();
@@ -287,7 +287,7 @@ public class TestMessagePersistor {
         verify(callback, times(0)).onFail(any());
 
         executor.shutdown();
-        executor.awaitTermination(0, TimeUnit.MILLISECONDS);
+        assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS), "Executor didn't terminate according to a timeout");
     }
 
 
@@ -300,6 +300,7 @@ public class TestMessagePersistor {
     }
 
 
+    @SuppressWarnings("SameParameterValue")
     private static MessageToStore createMessage(
             BookId bookId,
             String session,

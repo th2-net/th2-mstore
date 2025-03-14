@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Exactpro (Exactpro Systems Limited)
+ * Copyright 2023-2025 Exactpro (Exactpro Systems Limited)
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,11 +21,12 @@ import com.exactpro.th2.common.grpc.EventID;
 import com.exactpro.th2.common.grpc.EventStatus;
 import com.exactpro.th2.common.schema.message.MessageRouter;
 import com.google.protobuf.util.Timestamps;
-import org.apache.commons.lang3.RandomUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -43,6 +44,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -50,9 +52,6 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 @ExtendWith(MockitoExtension.class)
 @SuppressWarnings("DynamicRegexReplaceableByCompiledPattern")
 class TestErrorCollector {
-
-    private static final long PERIOD = RandomUtils.nextLong(0, Long.MAX_VALUE);
-    private static final TimeUnit TIME_UNIT = TimeUnit.values()[RandomUtils.nextInt(0, TimeUnit.values().length)] ;
 
     @Mock
     private Logger logger;
@@ -75,9 +74,10 @@ class TestErrorCollector {
     @BeforeEach
     void beforeEach() {
         doReturn(future).when(executor).scheduleAtFixedRate(any(Runnable.class), anyLong(), anyLong(), any(TimeUnit.class));
-        errorCollector = new ErrorCollector(executor, eventRouter, rootEvent, PERIOD, TIME_UNIT);
-        verify(executor).scheduleAtFixedRate(taskCaptor.capture(), eq(PERIOD), eq(PERIOD), eq(TIME_UNIT));
+        errorCollector = EventErrorCollector.create(executor, eventRouter, rootEvent, 1L, TimeUnit.MINUTES);
+        verify(executor).scheduleAtFixedRate(taskCaptor.capture(), eq(1L), eq(1L), eq(TimeUnit.MINUTES));
         verifyNoMoreInteractions(executor);
+        clearInvocations(executor);
     }
 
     @AfterEach
@@ -86,6 +86,19 @@ class TestErrorCollector {
         verifyNoMoreInteractions(executor);
         verifyNoMoreInteractions(future);
         verifyNoMoreInteractions(eventRouter);
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "60000,MICROSECONDS",
+            "60,SECONDS",
+            "1,MINUTES",
+    })
+    void testDrainTaskParameters(long period, TimeUnit timeUnit) throws Exception {
+        try(ErrorCollector ignored = EventErrorCollector.create(executor, eventRouter, rootEvent, period, timeUnit)) {
+            verify(executor).scheduleAtFixedRate(taskCaptor.capture(), eq(period), eq(period), eq(timeUnit));
+        }
+        verify(future).cancel(eq(true));
     }
 
     @SuppressWarnings("DynamicRegexReplaceableByCompiledPattern")

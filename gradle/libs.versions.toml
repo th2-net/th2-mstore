@@ -1,11 +1,11 @@
 [versions]
 th2-plugin = "0.2.4"
-cradle = "5.4.4-dev"
+cradle = "5.5.0-TH2-5286-14056166640-95d7d31-SNAPSHOT"
 
 [libraries]
 th2-common-utils = { group = "com.exactpro.th2", name = "common-utils", version = "2.3.0-dev" }
 th2-common = { group = "com.exactpro.th2", name = "common", version = "5.14.0-dev" }
-th2-task-utils = { group = "com.exactpro.th2", name = "task-utils", version = "0.1.3" }
+th2-task-utils = { group = "com.exactpro.th2", name = "task-utils", version = "0.1.4-TH2-5286-14055433562-729bf91-SNAPSHOT" }
 
 cradle-core = { group = "com.exactpro.th2", name = "cradle-core", version.ref = "cradle" }
 cradle-cassandra = { group = "com.exactpro.th2", name = "cradle-cassandra", version.ref = "cradle" }

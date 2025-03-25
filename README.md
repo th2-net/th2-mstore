@@ -119,6 +119,9 @@ Please see more details about this feature via [link](https://github.com/th2-net
 
 # Release notes
 
+## next
+* Enabled [Cassandra driver metrics](https://docs.datastax.com/en/developer/java-driver/4.10/manual/core/metrics/index.html)
+
 ## 5.10.0
 * Publish mstore as moven artifact.
 * Prepared MessagePersistor class for using in other project.

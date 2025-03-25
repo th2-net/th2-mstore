@@ -121,6 +121,7 @@ Please see more details about this feature via [link](https://github.com/th2-net
 
 ## 5.11.0
 * Provided option to limit parallel queries for statistic persistence
+* Enabled [Cassandra driver metrics](https://docs.datastax.com/en/developer/java-driver/4.10/manual/core/metrics/index.html)
 * Updated:
   * cradle api: `5.5.0-dev`
   * task-utils: `0.1.4`

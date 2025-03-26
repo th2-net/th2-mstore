@@ -1,6 +1,6 @@
 [versions]
 th2-plugin = "0.2.4"
-cradle = "5.5.0-TH2-5286-14057602595-0f6d137-SNAPSHOT"
+cradle = "5.5.0-refactored-time-frame-record-14080021544-2afa8d3-SNAPSHOT"
 
 [libraries]
 th2-common-utils = { group = "com.exactpro.th2", name = "common-utils", version = "2.3.0-dev" }

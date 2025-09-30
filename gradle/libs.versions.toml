@@ -10,7 +10,7 @@ th2-task-utils = { group = "com.exactpro.th2", name = "task-utils", version = "0
 cradle-core = { group = "com.exactpro.th2", name = "cradle-core", version.ref = "cradle" }
 cradle-cassandra = { group = "com.exactpro.th2", name = "cradle-cassandra", version.ref = "cradle" }
 
-junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version = "5.13.4" }
+junit-jupiter = { group = "org.junit.jupiter", name = "junit-jupiter", version = "5.14.0" }
 mockito-junit-jupiter = { group = "org.mockito", name = "mockito-junit-jupiter", version = "5.19.0" }
 
 [plugins]

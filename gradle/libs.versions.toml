@@ -1,5 +1,5 @@
 [versions]
-th2-plugin = "0.3.9"
+th2-plugin = "0.3.10"
 cradle = "5.7.0-dev"
 
 [libraries]

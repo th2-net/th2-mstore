@@ -1,4 +1,4 @@
-# Overview (5.11.0)
+# Overview (5.11.1)
 
 Message store (mstore) is an important th2 component responsible for storing raw messages into Cradle. Please refer to [Cradle repository] (https://github.com/th2-net/cradleapi/blob/master/README.md) for more details. This component has a pin for listening messages via MQ.
 
@@ -118,6 +118,16 @@ This is a list of supported features provided by libraries.
 Please see more details about this feature via [link](https://github.com/th2-net/th2-common-j#configuration-formats).
 
 # Release notes
+
+## 5.11.1
+
++ Produce multi-platform docker image
+  + migrated to [amazoncorretto:11-alpine-jdk](https://hub.docker.com/layers/library/amazoncorretto/11-alpine-jdk) docker image as base
++ Updated:
+  + th2 gradle plugin: `0.3.10` (bom: `4.14.2`)
+  + cradle api: `5.7.0-dev`
+  + common: `5.16.1-dev`
+  + common-utils: `2.4.0-dev`
 
 ## 5.11.0
 * Provided option to limit parallel queries for statistic persistence

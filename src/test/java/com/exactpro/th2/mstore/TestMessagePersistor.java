@@ -32,7 +32,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.stubbing.OngoingStubbing;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,15 +52,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class TestMessagePersistor {
     public static final StoredMessage[] EMPTY_STORED_MESSAGE_ARRAY = new StoredMessage[0];
     private final Logger logger = LoggerFactory.getLogger(TestMessagePersistor.class);
@@ -73,9 +79,12 @@ public class TestMessagePersistor {
 
     private static final BookId BOOK_ID = new BookId("test-book");
 
-    private final CradleStorage storageMock = mock(CradleStorage.class);
-    private final Callback<GroupedMessageBatchToStore> callback = mock(Callback.class);
-    private final ErrorCollector errorCollector = mock(ErrorCollector.class);
+    @Mock
+    private CradleStorage storageMock;
+    @Mock
+    private Callback<GroupedMessageBatchToStore> callback;
+    @Mock
+    private ErrorCollector errorCollector;
 
     private MessagePersistor persistor;
 
@@ -98,6 +107,8 @@ public class TestMessagePersistor {
                 .build();
         persistor = spy(new MessagePersistor(errorCollector, storageMock, config));
         persistor.start();
+
+        reset(persistor);
     }
 
     @AfterEach
@@ -114,17 +125,16 @@ public class TestMessagePersistor {
 
         Instant timestamp = Instant.now();
         String group = "test-group";
-        GroupedMessageBatchToStore batch = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST,
+        GroupedMessageBatchToStore batch = batchOf(group, createMessage(
                 12, timestamp, "raw message".getBytes()));
 
         persistor.persist(batch, callback);
-        pause(MESSAGE_PERSIST_TIMEOUT);
 
         ArgumentCaptor<GroupedMessageBatchToStore> capture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
-        verify(storageMock, times(1)).storeGroupedMessageBatchAsync(capture.capture());
-        verify(persistor, times(1)).processTask(any());
-        verify(callback, times(1)).onSuccess(any());
-        verify(callback, times(0)).onFail(any());
+        verify(storageMock, timeout(MESSAGE_PERSIST_TIMEOUT).times(1)).storeGroupedMessageBatchAsync(capture.capture());
+        verify(persistor, timeout(MESSAGE_PERSIST_TIMEOUT).times(1)).processTask(any());
+        verify(callback, timeout(MESSAGE_PERSIST_TIMEOUT).times(1)).onSuccess(any());
+        verify(callback, timeout(MESSAGE_PERSIST_TIMEOUT).times(0)).onFail(any());
 
         GroupedMessageBatchToStore value = capture.getValue();
         assertNotNull(value, "Captured message batch");
@@ -142,16 +152,16 @@ public class TestMessagePersistor {
 
         Instant timestamp = Instant.now();
         String group = "test-group";
-        GroupedMessageBatchToStore batch = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST,
+        GroupedMessageBatchToStore batch = batchOf(group, createMessage(
                 12, timestamp, "raw message".getBytes()));
         persistor.persist(batch, callback);
-        pause(MESSAGE_PERSIST_TIMEOUT * 2);
+        long timeout = MESSAGE_PERSIST_TIMEOUT * 2;
 
         ArgumentCaptor<GroupedMessageBatchToStore> capture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
-        verify(persistor, times(2)).processTask(any());
-        verify(storageMock, times(2)).storeGroupedMessageBatchAsync(capture.capture());
-        verify(callback, times(1)).onSuccess(any());
-        verify(callback, times(0)).onFail(any());
+        verify(persistor, timeout(timeout).times(2)).processTask(any());
+        verify(storageMock, timeout(timeout).times(2)).storeGroupedMessageBatchAsync(capture.capture());
+        verify(callback, timeout(timeout).times(1)).onSuccess(any());
+        verify(callback, timeout(timeout).times(0)).onFail(any());
 
         GroupedMessageBatchToStore value = capture.getValue();
         assertNotNull(value, "Captured stored message batch");
@@ -171,20 +181,25 @@ public class TestMessagePersistor {
 
         Instant timestamp = Instant.now();
         String group = "test-group";
-        GroupedMessageBatchToStore batch = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST, 12,
+        GroupedMessageBatchToStore batch = batchOf(group, createMessage(12,
                 timestamp, "raw message".getBytes()));
         persistor.persist(batch, callback);
-        pause(MESSAGE_PERSIST_TIMEOUT * (MAX_MESSAGE_PERSIST_RETRIES + 1));
+        verify(persistor).persist(same(batch), same(callback));
+
+        long timeout = MESSAGE_PERSIST_TIMEOUT * (MAX_MESSAGE_PERSIST_RETRIES + 1);
 
         ArgumentCaptor<GroupedMessageBatchToStore> capture = ArgumentCaptor.forClass(GroupedMessageBatchToStore.class);
-        verify(persistor, times(MAX_MESSAGE_PERSIST_RETRIES + 1)).processTask(any());
-        verify(storageMock, times(MAX_MESSAGE_PERSIST_RETRIES + 1)).storeGroupedMessageBatchAsync(capture.capture());
-        verify(callback, times(0)).onSuccess(any());
-        verify(callback, times(1)).onFail(any());
+        verify(persistor, timeout(timeout).times(MAX_MESSAGE_PERSIST_RETRIES + 1)).processTask(any());
+        verify(storageMock, timeout(timeout).times(MAX_MESSAGE_PERSIST_RETRIES + 1)).storeGroupedMessageBatchAsync(capture.capture());
+        verify(callback, timeout(timeout).times(0)).onSuccess(any());
+        verify(callback, timeout(timeout).times(1)).onFail(any());
 
         GroupedMessageBatchToStore value = capture.getValue();
         assertNotNull(value, "Captured stored root event");
         assertStoredGroupMessageBatch(batch, value);
+
+        verifyNoMoreInteractions(persistor);
+        verifyNoMoreInteractions(storageMock);
     }
 
 
@@ -203,7 +218,7 @@ public class TestMessagePersistor {
         String group = "test-group";
         GroupedMessageBatchToStore[] batch = new GroupedMessageBatchToStore[totalMessages];
         for (int i = 0; i < totalMessages; i++) {
-            batch[i] = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST, i, timestamp,
+            batch[i] = batchOf(group, createMessage(i, timestamp,
                     "raw message".getBytes()));
         }
 
@@ -257,7 +272,7 @@ public class TestMessagePersistor {
         String group = "test-group";
         GroupedMessageBatchToStore[] batch = new GroupedMessageBatchToStore[totalMessages];
         for (int i = 0; i < totalMessages; i++) {
-            batch[i] = batchOf(group, createMessage(BOOK_ID, "test-session", Direction.FIRST, i, timestamp, content));
+            batch[i] = batchOf(group, createMessage(i, timestamp, content));
         }
 
         when(storageMock.storeGroupedMessageBatchAsync(any()))
@@ -291,6 +306,7 @@ public class TestMessagePersistor {
     }
 
 
+    @SuppressWarnings("SameParameterValue")
     private void pause(long millis) {
         try {
             Thread.sleep(millis);
@@ -302,20 +318,17 @@ public class TestMessagePersistor {
 
     @SuppressWarnings("SameParameterValue")
     private static MessageToStore createMessage(
-            BookId bookId,
-            String session,
-            Direction direction,
             long sequence,
             Instant timestamp,
             byte[] content
     ) throws CradleStorageException {
 
         return new MessageToStoreBuilder()
-                .bookId(bookId)
-                .sessionAlias(session)
+                .bookId(TestMessagePersistor.BOOK_ID)
+                .sessionAlias("test-session")
                 .content(content)
                 .timestamp(timestamp)
-                .direction(direction)
+                .direction(Direction.FIRST)
                 .sequence(sequence).build();
     }
 
